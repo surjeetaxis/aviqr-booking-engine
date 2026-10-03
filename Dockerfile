@@ -1,4 +1,4 @@
-FROM gradle:8.14-jdk21 AS backend-build
+FROM gradle:9.8.0-jdk21 AS backend-build
 WORKDIR /src
 COPY . .
 RUN gradle --no-daemon bootJar
