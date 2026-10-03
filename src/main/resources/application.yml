@@ -1,0 +1,22 @@
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+spring:
+  application:
+    name: aviqr-booking-engine
+  jackson:
+    default-property-inclusion: non_null
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+aviqr:
+  core-api: ${AVIQR_CORE_API:https://api.aviqr.in}
+  brand:
+    name: ${BRAND_NAME:AviQR Stays}
+    primary: ${BRAND_PRIMARY:#1f7257}
+    accent: ${BRAND_ACCENT:#d5a86b}
+    logo: ${BRAND_LOGO:}
+    support-email: ${BRAND_SUPPORT_EMAIL:}
+    property-ids: ${PROPERTY_IDS:}

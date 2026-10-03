@@ -1,0 +1,42 @@
+services:
+  booking-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      AVIQR_CORE_API: ${AVIQR_CORE_API:?Set the AviQR public API base URL}
+      BRAND_NAME: ${BRAND_NAME:-AviQR Stays}
+      BRAND_PRIMARY: ${BRAND_PRIMARY:-#1f7257}
+      BRAND_ACCENT: ${BRAND_ACCENT:-#d5a86b}
+      BRAND_LOGO: ${BRAND_LOGO:-}
+      BRAND_SUPPORT_EMAIL: ${BRAND_SUPPORT_EMAIL:-}
+      PROPERTY_IDS: ${PROPERTY_IDS:-}
+    expose: ["8080"]
+    networks: [booking]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+  booking-ui:
+    build: ./ui
+    restart: unless-stopped
+    depends_on: [booking-api]
+    expose: ["80"]
+    networks: [booking]
+    security_opt: ["no-new-privileges:true"]
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    depends_on: [booking-ui]
+    environment: ["DOMAIN=${DOMAIN:?Set DOMAIN}"]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [booking]
+networks:
+  booking:
+    driver: bridge
+volumes:
+  caddy_data:
+  caddy_config:

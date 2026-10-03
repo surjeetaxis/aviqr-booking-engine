@@ -45,3 +45,4 @@ Guest browser → Caddy (automatic TLS) → Nginx/React → standalone Booking A
 
 The API acts as a same-origin proxy so the browser does not need direct AviQR service credentials. Do not put PMS credentials, internal secrets, signing keys, or payment provider secrets in the UI or its build variables. For a future private service-to-service deployment, use the AviQR gateway's authenticated internal integration contract and provision a dedicated service identity; never expose shared internal secrets to this public storefront.
 # aviqr-booking-engine
+# aviqr-booking-engine
