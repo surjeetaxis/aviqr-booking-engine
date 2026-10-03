@@ -1,64 +1,71 @@
 package in.aviqr.booking;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import in.aviqr.booking.data.OtaBookingOrder;
+import in.aviqr.booking.data.OtaBookingOrderRepository;
+import in.aviqr.booking.data.OtaFavorite;
+import in.aviqr.booking.data.OtaFavoriteRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/v1/ota")
 public class PublicBookingController {
     private final RestClient aviQr;
     private final BookingEngineApplication.Brand brand;
-    PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand) { this.aviQr = aviQr; this.brand = brand; }
+    private final OtaBookingOrderRepository bookingOrders;
+    private final OtaFavoriteRepository favorites;
+    private final ObjectMapper mapper;
+
+    PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand,
+            OtaBookingOrderRepository bookingOrders, OtaFavoriteRepository favorites, ObjectMapper mapper) {
+        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.mapper=mapper;
+    }
 
     @GetMapping("/config") public Map<String,Object> config() {
-        return Map.of("brand", brand.name(), "primary", brand.primary(), "accent", brand.accent(), "logo", brand.logo(), "supportEmail", brand.supportEmail(), "propertyIds", brand.propertyIds());
+        return Map.of("brand", brand.name(), "primary", brand.primary(), "accent", brand.accent(),
+            "logo", brand.logo(), "supportEmail", brand.supportEmail(), "propertyIds", brand.propertyIds());
     }
     @GetMapping("/properties") public Object properties(@RequestParam(defaultValue="") String q,
             @RequestParam(defaultValue="") String city, @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="24") int size) {
-        var allowed = allowedPropertyIds();
+        var allowed=allowedPropertyIds();
         if (!allowed.isEmpty()) {
-            var results = allowed.stream().map(this::fetchProperty).filter(x -> matches(x, q, city)).limit(Math.min(100,Math.max(1,size))).toList();
-            return results;
+            return allowed.stream().map(this::fetchProperty).filter(x -> matches(x,q,city))
+                .limit(Math.min(100,Math.max(1,size))).toList();
         }
         return get("/api/v1/hotels/public/booking-search?q={q}&city={city}&page={page}&size={size}", q, city, Math.max(0,page), Math.min(100,Math.max(1,size)));
     }
     @GetMapping("/properties/{hotelId}") public Object property(@PathVariable UUID hotelId) {
-        requireAllowed(hotelId);
-        return get("/api/v1/hotels/public/booking-search/{id}", hotelId);
+        requireAllowed(hotelId); return get("/api/v1/hotels/public/booking-search/{id}", hotelId);
     }
-    private Object fetchProperty(UUID hotelId) { Object raw=get("/api/v1/hotels/public/booking-search/{id}", hotelId); return raw instanceof Map<?,?> map ? map.get("data") : raw; }
-    private boolean matches(Object response, String query, String city) {
-        if (!(response instanceof Map<?,?> hotel)) return false;
-        String haystack = (String.valueOf(hotel.get("name"))+" "+String.valueOf(hotel.get("city"))+" "+String.valueOf(hotel.get("address"))).toLowerCase();
-        return (query == null || query.isBlank() || haystack.contains(query.toLowerCase()))
-            && (city == null || city.isBlank() || String.valueOf(hotel.get("city")).equalsIgnoreCase(city));
-    }
-    private java.util.Set<UUID> allowedPropertyIds() {
-        if (brand.propertyIds() == null || brand.propertyIds().isBlank()) return java.util.Set.of();
-        try {
-            var ids = java.util.Arrays.stream(brand.propertyIds().split(",")).map(String::trim).filter(s -> !s.isEmpty())
-                .map(UUID::fromString).sorted(java.util.Comparator.comparing(UUID::toString)).collect(java.util.stream.Collectors.toList());
-            if (ids.size() > 100) throw new IllegalStateException("PROPERTY_IDS supports at most 100 properties per storefront");
-            return java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(ids));
-        } catch (IllegalArgumentException e) { throw new IllegalStateException("PROPERTY_IDS must contain comma-separated property UUIDs", e); }
-    }
-    private void requireAllowed(UUID hotelId) {
-        var allowed=allowedPropertyIds();
-        if (!allowed.isEmpty() && !allowed.contains(hotelId)) throw new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);
+    @GetMapping("/recommendations") public Object recommendations(@RequestParam(defaultValue="") String city,
+            @RequestParam UUID visitorId) {
+        Object raw=properties("",city,0,100);
+        List<Map<String,Object>> rows=propertyRows(raw);
+        Set<UUID> saved=favorites.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream()
+            .map(OtaFavorite::getPropertyId).collect(Collectors.toSet());
+        rows.sort(Comparator.<Map<String,Object>>comparingLong(p -> bookingOrders.countByPropertyIdAndStatus(asUuid(p.get("id")),"CONFIRMED"))
+            .reversed().thenComparing(p -> saved.contains(asUuid(p.get("id"))) ? 0 : 1));
+        for (var row:rows) row.put("recommendationReason", bookingOrders.countByPropertyIdAndStatus(asUuid(row.get("id")),"CONFIRMED")>0
+            ? "Popular with AviQR guests" : "Recommended from the AviQR collection");
+        return rows;
     }
     @GetMapping("/properties/{hotelId}/room-types") public Object roomTypes(@PathVariable UUID hotelId) {
-        requireAllowed(hotelId);
-        return get("/api/v1/pms/public/booking-engine/{id}/room-types", hotelId);
+        requireAllowed(hotelId); return get("/api/v1/pms/public/booking-engine/{id}/room-types", hotelId);
     }
     @GetMapping("/properties/{hotelId}/availability") public Object availability(@PathVariable UUID hotelId,
             @RequestParam UUID roomTypeId, @RequestParam @FutureOrPresent LocalDate checkIn,
@@ -66,47 +73,136 @@ public class PublicBookingController {
         requireAllowed(hotelId);
         return get("/api/v1/pms/public/booking-engine/{id}/availability?roomTypeId={room}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, checkIn, checkOut);
     }
+    @GetMapping("/properties/{hotelId}/room-map") public Object availableRooms(@PathVariable UUID hotelId,
+            @RequestParam UUID roomTypeId, @RequestParam @FutureOrPresent LocalDate checkIn,
+            @RequestParam @Future LocalDate checkOut) {
+        requireAllowed(hotelId);
+        return get("/api/v1/pms/public/booking-engine/{id}/room-map?roomTypeId={room}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, checkIn, checkOut);
+    }
     @GetMapping("/properties/{hotelId}/quote") public Object quote(@PathVariable UUID hotelId,
             @RequestParam UUID roomTypeId, @RequestParam UUID ratePlanId,
             @RequestParam @FutureOrPresent LocalDate checkIn, @RequestParam @Future LocalDate checkOut) {
         requireAllowed(hotelId);
         return get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, ratePlanId, checkIn, checkOut);
     }
-    @PostMapping(value="/properties/{hotelId}/book", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Object> book(@PathVariable UUID hotelId, @Valid @RequestBody BookingRequest request) {
-        requireAllowed(hotelId);
-        try {
-            Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book", hotelId)
-                .contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Object.class);
-            return ResponseEntity.ok(result);
-        } catch (RestClientResponseException e) { return ResponseEntity.status(e.getStatusCode()).body(error(e)); }
+
+    @GetMapping("/favorites") public List<UUID> favoriteProperties(@RequestParam UUID visitorId) {
+        return favorites.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream().map(OtaFavorite::getPropertyId).toList();
     }
-    private Object get(String path, Object... vars) {
-        try { return aviQr.get().uri(path, vars).retrieve().body(Object.class); }
+    @PutMapping("/favorites/{hotelId}") public ResponseEntity<Void> saveFavorite(@PathVariable UUID hotelId,@RequestParam UUID visitorId) {
+        requireAllowed(hotelId);
+        if (!favorites.existsByVisitorIdAndPropertyId(visitorId,hotelId)) favorites.save(new OtaFavorite(visitorId,hotelId));
+        return ResponseEntity.noContent().build();
+    }
+    @DeleteMapping("/favorites/{hotelId}") public ResponseEntity<Void> removeFavorite(@PathVariable UUID hotelId,@RequestParam UUID visitorId) {
+        favorites.deleteByVisitorIdAndPropertyId(visitorId,hotelId); return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value="/properties/{hotelId}/book", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Object> book(@PathVariable UUID hotelId, @Valid @RequestBody BookingRequest request,
+            @RequestHeader(value="Idempotency-Key", required=false) UUID suppliedKey) {
+        requireAllowed(hotelId);
+        UUID requestId=suppliedKey!=null?suppliedKey:UUID.randomUUID();
+        OtaBookingOrder order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
+        if (order!=null && "CONFIRMED".equals(order.getStatus())) return ResponseEntity.ok(confirmation(order));
+        if (order!=null && (!order.getPropertyId().equals(hotelId) || !order.getRoomId().equals(request.roomId())
+                || !order.getRoomTypeId().equals(request.roomTypeId()) || !order.getCheckIn().equals(request.checkInDate())
+                || !order.getCheckOut().equals(request.checkOutDate()) || !order.getAdults().equals(request.adults())
+                || !order.getChildren().equals(request.children())))
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","Idempotency key was already used for a different booking"));
+        if (order==null) {
+            order=new OtaBookingOrder(requestId,hotelId,request.roomTypeId(),request.roomId(),request.checkInDate(),request.checkOutDate(),request.adults(),request.children());
+            try { order=bookingOrders.saveAndFlush(order); }
+            catch (DataIntegrityViolationException duplicate) {
+                order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
+                if (order==null) throw duplicate;
+                if ("CONFIRMED".equals(order.getStatus())) return ResponseEntity.ok(confirmation(order));
+            }
+        }
+        try {
+            Object price=get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}",
+                hotelId,request.roomTypeId(),request.ratePlanId(),request.checkInDate(),request.checkOutDate());
+            JsonNode quote=mapper.valueToTree(price).path("data");
+            BigDecimal total=quote.path("totalBeforeTax").isNumber()?quote.path("totalBeforeTax").decimalValue():null;
+            String currency=quote.path("currency").asText("INR");
+            PmsBookingRequest pmsRequest=new PmsBookingRequest(request.guestName(),request.guestPhone(),request.checkInDate(),
+                request.checkOutDate(),request.adults(),request.children(),request.roomTypeId(),request.ratePlanId(),request.roomId(),requestId);
+            Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book",hotelId)
+                .contentType(MediaType.APPLICATION_JSON).body(pmsRequest).retrieve().body(Object.class);
+            JsonNode reservation=mapper.valueToTree(result).path("data");
+            String pmsIdValue=reservation.path("reservationId").asText(reservation.path("id").asText());
+            UUID pmsId=UUID.fromString(pmsIdValue);
+            order.confirm(pmsId,total,currency);
+            order=bookingOrders.save(order);
+            return ResponseEntity.ok(confirmation(order));
+        } catch (RestClientResponseException e) {
+            order.fail(); bookingOrders.save(order);
+            return ResponseEntity.status(e.getStatusCode()).body(Map.of("message","PMS could not complete this booking","upstreamStatus",e.getStatusCode().value()));
+        } catch (IllegalArgumentException e) {
+            order.fail(); bookingOrders.save(order);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message","PMS returned an invalid booking confirmation"));
+        }
+    }
+    @GetMapping("/bookings/{bookingId}") public ResponseEntity<Object> booking(@PathVariable UUID bookingId) {
+        return bookingOrders.findById(bookingId).map(o -> ResponseEntity.ok(confirmation(o)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private Object confirmation(OtaBookingOrder o) {
+        Map<String,Object> data=new LinkedHashMap<>(); data.put("bookingId",o.getId());
+        data.put("reservationId",o.getPmsReservationId()); data.put("status",o.getStatus()); data.put("hotelId",o.getPropertyId());
+        data.put("roomTypeId",o.getRoomTypeId()); data.put("roomId",o.getRoomId()); data.put("checkIn",o.getCheckIn());
+        data.put("checkOut",o.getCheckOut()); data.put("adults",o.getAdults()); data.put("children",o.getChildren());
+        data.put("totalBeforeTax",o.getTotalBeforeTax()); data.put("currency",o.getCurrency());
+        return Map.of("success",true,"message","Booking status","data",data);
+    }
+    private Object get(String path,Object... vars) {
+        try { return aviQr.get().uri(path,vars).retrieve().body(Object.class); }
         catch (RestClientResponseException e) { throw new OtaUpstreamException(e); }
     }
-    private static Map<String,Object> error(RestClientResponseException e) {
-        return Map.of("message", "Booking request could not be completed", "upstreamStatus", e.getStatusCode().value());
+    private List<Map<String,Object>> propertyRows(Object raw) {
+        JsonNode root=mapper.valueToTree(raw);
+        JsonNode data=root.isArray()?root:root.path("data");
+        JsonNode rows=data.isArray()?data:data.path("content");
+        if (!rows.isArray()) return new ArrayList<>();
+        List<Map<String,Object>> output=new ArrayList<>();
+        rows.forEach(node -> output.add(mapper.convertValue(node,Map.class)));
+        return output;
     }
+    private Object fetchProperty(UUID id) { Object raw=get("/api/v1/hotels/public/booking-search/{id}",id); return raw instanceof Map<?,?> map?map.get("data"):raw; }
+    private boolean matches(Object x,String q,String city) {
+        if (!(x instanceof Map<?,?> p)) return false;
+        String haystack=(String.valueOf(p.get("name"))+" "+String.valueOf(p.get("city"))+" "+String.valueOf(p.get("address"))).toLowerCase();
+        return (q==null||q.isBlank()||haystack.contains(q.toLowerCase()))&&(city==null||city.isBlank()||String.valueOf(p.get("city")).equalsIgnoreCase(city));
+    }
+    private UUID asUuid(Object id) { return id instanceof UUID u?u:UUID.fromString(String.valueOf(id)); }
+    private Set<UUID> allowedPropertyIds() {
+        if (brand.propertyIds()==null||brand.propertyIds().isBlank()) return Set.of();
+        try {
+            List<UUID> ids=Arrays.stream(brand.propertyIds().split(",")).map(String::trim).filter(s->!s.isEmpty())
+                .map(UUID::fromString).sorted(Comparator.comparing(UUID::toString)).toList();
+            if(ids.size()>100)throw new IllegalStateException("PROPERTY_IDS supports at most 100 properties per storefront");
+            return Collections.unmodifiableSet(new LinkedHashSet<>(ids));
+        } catch(IllegalArgumentException e) { throw new IllegalStateException("PROPERTY_IDS must contain comma-separated property UUIDs",e); }
+    }
+    private void requireAllowed(UUID id) { Set<UUID> allowed=allowedPropertyIds(); if(!allowed.isEmpty()&&!allowed.contains(id))throw new ResponseStatusException(HttpStatus.NOT_FOUND); }
     public record BookingRequest(@NotBlank @Size(max=120) String guestName,
         @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String guestPhone,
-        @NotNull @FutureOrPresent LocalDate checkInDate, @NotNull @Future LocalDate checkOutDate,
-        @NotNull @Min(1) @Max(12) Integer adults, @Min(0) @Max(12) Integer children,
-        @NotNull UUID roomTypeId, @NotNull UUID ratePlanId) { }
+        @NotNull @FutureOrPresent LocalDate checkInDate,@NotNull @Future LocalDate checkOutDate,
+        @NotNull @Min(1) @Max(12) Integer adults,@Min(0) @Max(12) Integer children,
+        @NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId) { }
+    private record PmsBookingRequest(String guestName,String guestPhone,LocalDate checkInDate,LocalDate checkOutDate,
+        Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId) { }
     @RestControllerAdvice static class Errors {
-        @ExceptionHandler(RestClientResponseException.class) ResponseEntity<Object> upstream(RestClientResponseException e) {
-            return ResponseEntity.status(e.getStatusCode()).body(error(e));
-        }
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
-            return ResponseEntity.status(e.getCause().getStatusCode()).body(error(e.getCause()));
+            return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));
         }
-        @ExceptionHandler({IllegalArgumentException.class}) ResponseEntity<Object> badRequest(Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Invalid booking search"));
+        @ExceptionHandler(IllegalArgumentException.class) ResponseEntity<Object> badRequest(Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message","Invalid booking request"));
         }
     }
     static class OtaUpstreamException extends RuntimeException {
         private final RestClientResponseException cause;
-        OtaUpstreamException(RestClientResponseException cause) { super(cause); this.cause=cause; }
-        @Override public synchronized RestClientResponseException getCause() { return cause; }
+        OtaUpstreamException(RestClientResponseException cause){super(cause);this.cause=cause;}
     }
 }

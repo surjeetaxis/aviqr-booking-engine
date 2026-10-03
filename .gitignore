@@ -1,0 +1,7 @@
+/.env
+/.gradle/
+/build/
+/ui/node_modules/
+/ui/dist/
+/.data/
+/.idea/

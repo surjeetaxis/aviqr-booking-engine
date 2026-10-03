@@ -13,8 +13,8 @@ fi
 set -a
 source .env
 set +a
-if [[ -z "${DOMAIN:-}" || -z "${AVIQR_CORE_API:-}" ]]; then
-  echo "DOMAIN and AVIQR_CORE_API must be set in .env." >&2
+if [[ -z "${DOMAIN:-}" || -z "${AVIQR_CORE_API:-}" || -z "${DATABASE_PASSWORD:-}" || "${DATABASE_PASSWORD:-}" == "replace-with-a-unique-long-random-value" ]]; then
+  echo "DOMAIN, AVIQR_CORE_API and a unique DATABASE_PASSWORD must be set in .env." >&2
   exit 2
 fi
 docker compose up --build -d

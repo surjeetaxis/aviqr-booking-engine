@@ -1,9 +1,29 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aviqr_booking_engine}
+      POSTGRES_USER: ${POSTGRES_USER:-aviqr_booking}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set a unique DATABASE_PASSWORD in .env}
+    volumes:
+      - booking_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [booking]
+    security_opt: ["no-new-privileges:true"]
   booking-api:
     build: .
     restart: unless-stopped
     environment:
       PORT: 8080
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aviqr_booking_engine}
+      DATABASE_USERNAME: ${POSTGRES_USER:-aviqr_booking}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
       AVIQR_CORE_API: ${AVIQR_CORE_API:?Set the AviQR public API base URL}
       BRAND_NAME: ${BRAND_NAME:-AviQR Stays}
       BRAND_PRIMARY: ${BRAND_PRIMARY:-#1f7257}
@@ -13,6 +33,9 @@ services:
       PROPERTY_IDS: ${PROPERTY_IDS:-}
     expose: ["8080"]
     networks: [booking]
+    depends_on:
+      postgres:
+        condition: service_healthy
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
@@ -38,5 +61,6 @@ networks:
   booking:
     driver: bridge
 volumes:
+  booking_pgdata:
   caddy_data:
   caddy_config:

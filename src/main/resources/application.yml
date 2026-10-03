@@ -2,6 +2,18 @@ server:
   port: ${PORT:8080}
   forward-headers-strategy: framework
 spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/aviqr_booking_engine}
+    username: ${DATABASE_USERNAME:aviqr_booking}
+    password: ${DATABASE_PASSWORD:local_booking_change_me}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:10}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
   application:
     name: aviqr-booking-engine
   jackson:
@@ -12,7 +24,7 @@ management:
       exposure:
         include: health,info
 aviqr:
-  core-api: ${AVIQR_CORE_API:https://api.aviqr.in}
+  core-api: ${AVIQR_CORE_API:https://api.aviqr.com}
   brand:
     name: ${BRAND_NAME:AviQR Stays}
     primary: ${BRAND_PRIMARY:#1f7257}

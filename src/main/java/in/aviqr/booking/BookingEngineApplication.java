@@ -15,7 +15,7 @@ public class BookingEngineApplication {
         return builder.baseUrl(core.api()).build();
     }
     @Bean CoreProperties coreProperties(org.springframework.core.env.Environment env) {
-        return new CoreProperties(env.getProperty("aviqr.core-api", "https://api.aviqr.in"));
+        return new CoreProperties(env.getProperty("aviqr.core-api", "https://api.aviqr.com"));
     }
     record CoreProperties(String api) {}
     @ConfigurationProperties("aviqr.brand")

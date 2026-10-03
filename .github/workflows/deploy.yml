@@ -1,0 +1,71 @@
+name: Build and deploy booking engine
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Build API
+        run: gradle --no-daemon bootJar
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build storefront
+        working-directory: ui
+        run: npm ci && npm run build
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.GCP_VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.GCP_VM_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_KEY" || { echo 'Missing GCP_VM_SSH_KEY secret' >&2; exit 1; }
+          test -n "$KNOWN_HOSTS" || { echo 'Missing GCP_VM_KNOWN_HOSTS secret' >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Package deployment
+        run: tar -czf "$RUNNER_TEMP/aviqr-booking-engine.tgz" --exclude='./.git' --exclude='./.env' --exclude='./ui/node_modules' --exclude='./ui/dist' --exclude='./build' .
+      - name: Upload and deploy
+        env:
+          VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          VM_USER: ${{ secrets.GCP_VM_USER }}
+        run: |
+          test -n "$VM_HOST" && test -n "$VM_USER" || { echo 'Missing GCP_VM_HOST or GCP_VM_USER secret' >&2; exit 1; }
+          scp -i "$HOME/.ssh/id_ed25519" "$RUNNER_TEMP/aviqr-booking-engine.tgz" "$VM_USER@$VM_HOST:/tmp/aviqr-booking-engine.tgz"
+          ssh -i "$HOME/.ssh/id_ed25519" "$VM_USER@$VM_HOST" 'set -eu; test -f /opt/aviqr-booking-engine/.env || { echo "Create /opt/aviqr-booking-engine/.env before first deploy" >&2; exit 1; }; tar -xzf /tmp/aviqr-booking-engine.tgz -C /opt/aviqr-booking-engine; rm -f /tmp/aviqr-booking-engine.tgz; cd /opt/aviqr-booking-engine; ./deploy.sh'
