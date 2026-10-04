@@ -5,6 +5,7 @@ import Home from './Home.jsx';
 import Property from './Property.jsx';
 import Trips from './Trips.jsx';
 import Checkout from './Checkout.jsx';
+import { applyBrand, logoFor } from './brand.js';
 import './style.css';
 
 const readRoute = () => window.location.hash.replace(/^#/, '') || (window.location.pathname.startsWith('/stay/') ? window.location.pathname : '/');
@@ -90,6 +91,7 @@ function App() {
     const root = document.documentElement.style;
     if (config.primary) root.setProperty('--brand', config.primary);
     if (config.accent) root.setProperty('--accent', config.accent);
+    applyBrand(config);
   }, [config]);
 
   async function toggleFavorite(p) {
@@ -120,8 +122,8 @@ function App() {
     <>
       <header className="topbar">
         <a className="brand" href={tenantStorefront ? `#/stay/${config.propertyId}` : '#/'}>
-          {config.logo ? <img src={config.logo} alt="" /> : <span className="brandmark">{(config.brand || 'A')[0]}</span>}
-          <span>{config.brand || 'AviQR Stays'}</span>
+          <img className="brand-logo" src={logoFor(config)} alt="" />
+          <span className="brand-name">{config.brand || 'AviQR Stays'}<small>{tenantStorefront ? [config.city, 'Book direct'].filter(Boolean).join(' · ') : 'Book direct'}</small></span>
         </a>
         <nav>
           {!tenantStorefront && <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>}
@@ -137,7 +139,7 @@ function App() {
           <Checkout hotelId={stayId} stay={stay} items={cartItems} navigate={navigate} tenant={tenantStorefront}
             onBackToRooms={() => navigate(roomsPath)} onBooked={() => setCart({ items: [] })} />
         ) : stayId ? (
-          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} tenant={tenantStorefront}
+          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} tenant={tenantStorefront} design={config.design}
             cartItems={cartItems} onAdd={addToCart} onRemove={removeFromCart} onContinue={() => navigate(checkoutPath)} />
         ) : route === '/trips' ? (
           <Trips stays={stays} navigate={navigate} />
@@ -147,7 +149,7 @@ function App() {
         )}
       </main>
       <footer className="footer">
-        <span className="brand"><span className="brandmark">{(config.brand || 'A')[0]}</span>{config.brand || 'AviQR Stays'}</span>
+        <span className="brand"><img className="brand-logo small" src={logoFor(config)} alt="" />{config.brand || 'AviQR Stays'}</span>
         <span>Live rooms & rates from AviQR PMS · Book direct with the hotel</span>
         {config.supportEmail && <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>}
         <span>© {new Date().getFullYear()} {config.brand || 'AviQR'}</span>

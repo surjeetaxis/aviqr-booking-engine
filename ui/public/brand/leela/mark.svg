@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Leela Resort">
+  <circle cx="32" cy="32" r="32" fill="#1f4e5f"/>
+  <circle cx="32" cy="32" r="27.5" fill="none" stroke="#c9a14a" stroke-width="1.6"/>
+  <path d="M22 35 a10 10 0 0 1 20 0 Z" fill="#c9a14a"/>
+  <g fill="none" stroke="#c9a14a" stroke-width="2.2" stroke-linecap="round">
+    <path d="M14 40 q4.5 -3.5 9 0 t9 0 t9 0 t9 0"/>
+    <path d="M19 46 q3.25 -2.8 6.5 0 t6.5 0 t6.5 0 t6.5 0" opacity=".75"/>
+  </g>
+  <g stroke="#c9a14a" stroke-width="1.6" stroke-linecap="round"><path d="M32 18 v4 M22.5 21.5 l2.5 3 M41.5 21.5 l-2.5 3"/></g>
+</svg>

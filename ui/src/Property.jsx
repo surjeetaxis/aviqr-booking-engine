@@ -7,7 +7,7 @@ import RoomTour, { hasMedia, tourLabel, withTypeMedia } from './RoomTour.jsx';
 import { Stepper, StaySummary } from './Flow.jsx';
 import { guestsPerRoom } from './pricing.js';
 
-export default function Property({ id, stay, setStay, favorites, onFavorite, navigate, tenant = false, cartItems, onAdd, onRemove, onContinue }) {
+export default function Property({ id, stay, setStay, favorites, onFavorite, navigate, tenant = false, design, cartItems, onAdd, onRemove, onContinue }) {
   const [property, setProperty] = useState(null);
   const [roomTypes, setRoomTypes] = useState(null);
   const [extras, setExtras] = useState(null);
@@ -55,14 +55,14 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
 
   return (
     <div className="property-page">
-      <section className="p-hero">
+      <section className={`p-hero ${tenant && design?.heroTitle ? 'designed' : ''}`}>
         <Scene seed={property.id} theme={stayTheme(property)} className="p-hero-art" label={`${property.city} illustration`} />
         <div className="p-hero-shade" />
         <div className="p-hero-body">
           {!tenant && <button className="crumb" onClick={() => navigate('/')}>← All stays</button>}
-          <span className="eyebrow light">{property.city || 'AVIQR COLLECTION'}</span>
-          <h1>{property.name}</h1>
-          <p>{[property.address, property.city].filter(Boolean).join(', ')}</p>
+          <span className="eyebrow light">{tenant && design?.heroTitle ? [property.name, property.city].filter(Boolean).join(' · ') : property.city || 'AVIQR COLLECTION'}</span>
+          <h1>{design?.heroTitle && tenant ? design.heroTitle : property.name}</h1>
+          <p>{design?.tagline && tenant ? design.tagline : [property.address, property.city].filter(Boolean).join(', ')}</p>
           <div className="p-hero-actions">
             <button className={`fav-pill ${saved ? 'on' : ''}`} onClick={() => onFavorite(property)}>{saved ? '♥ Saved' : '♡ Save'}</button>
             <a className="fav-pill" href="#rooms">See rooms ↓</a>

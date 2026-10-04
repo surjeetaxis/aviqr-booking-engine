@@ -58,6 +58,10 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
 .brand img { height: 36px; max-width: 120px; object-fit: contain; }
+.brand-logo { width: 36px; height: 36px; border-radius: 10px; }
+.brand-logo.small { width: 28px; height: 28px; }
+.brand-name { display: grid; line-height: 1.1; }
+.brand-name small { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
 .brandmark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: var(--brand); color: #fff; font: 600 19px var(--serif); }
 nav { display: flex; gap: 6px; }
 nav a { padding: 9px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); display: flex; gap: 6px; align-items: center; }
@@ -456,3 +460,50 @@ nav b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 
   :root:not([data-theme="light"]) .unit.free { background: color-mix(in srgb, var(--ok) 20%, var(--paper)); }
   :root:not([data-theme="light"]) .corridor { background: repeating-linear-gradient(90deg, #232c27 0 14px, #1b231f 14px 28px); }
 }
+
+/* Design preset: resort-luxe (The Leela). Light tokens, then dark variants that outrank them. */
+:root[data-design="resort-luxe"] {
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --bg: #fbf8f1; --tint: #f3ecdd; --paper: #ffffff; --line: #e7dfcc; --ink: #1c2b2f; --muted: #6f7772; --radius: 6px;
+  font-family: 'Jost', Manrope, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-design="resort-luxe"]:not([data-theme="light"]) { --bg: #0e171a; --tint: #172429; --paper: #132024; --line: #26363b; --ink: #f1ece0; --muted: #a9b1ad; }
+}
+:root[data-design="resort-luxe"][data-theme="dark"] { --bg: #0e171a; --tint: #172429; --paper: #132024; --line: #26363b; --ink: #f1ece0; --muted: #a9b1ad; }
+[data-design="resort-luxe"] .topbar { background: #1f4e5f; border-bottom: 1px solid #c9a14a55; color: #f6f1e4; }
+[data-design="resort-luxe"] .topbar nav a { color: #f6f1e4cc; }
+[data-design="resort-luxe"] .topbar nav a:hover, [data-design="resort-luxe"] .topbar nav a.on { background: #ffffff1a; color: #fff; }
+[data-design="resort-luxe"] .brand-name { font: 600 21px/1.05 var(--serif); letter-spacing: .01em; }
+[data-design="resort-luxe"] .brand-name small { color: #c9a14a; font-family: 'Jost', sans-serif; }
+[data-design="resort-luxe"] .brand-logo { border-radius: 50%; }
+[data-design="resort-luxe"] .theme-toggle { background: transparent; border-color: #ffffff40; color: #f6f1e4; }
+[data-design="resort-luxe"] .eyebrow { color: #a8853a; letter-spacing: .24em; }
+[data-design="resort-luxe"] .primary, [data-design="resort-luxe"] .secondary, [data-design="resort-luxe"] .ghost { border-radius: 2px; text-transform: uppercase; letter-spacing: .14em; font-size: 12.5px; padding: 14px 24px; }
+[data-design="resort-luxe"] .primary { background: #1f4e5f; box-shadow: none; }
+[data-design="resort-luxe"] .primary:not(:disabled):hover { background: #173c49; }
+[data-design="resort-luxe"] .secondary { background: transparent; border: 1px solid #c9a14a; color: #8a6a2a; }
+[data-design="resort-luxe"] .p-hero.designed { height: min(78vh, 680px); }
+[data-design="resort-luxe"] .p-hero.designed .p-hero-shade { background: linear-gradient(180deg, #0e171a33 0%, #0e171acc 100%); }
+[data-design="resort-luxe"] .p-hero.designed .p-hero-body { left: 50%; right: auto; bottom: 18%; transform: translateX(-50%); width: min(820px, calc(100% - 32px)); text-align: center; }
+[data-design="resort-luxe"] .p-hero.designed h1 { font-size: clamp(38px, 6vw, 72px); font-weight: 500; }
+[data-design="resort-luxe"] .p-hero.designed h1::after { content: ''; display: block; width: 64px; height: 1px; background: #c9a14a; margin: 18px auto 0; }
+[data-design="resort-luxe"] .p-hero.designed p { font-size: 17px; max-width: 620px; margin: 0 auto; }
+[data-design="resort-luxe"] .p-hero.designed .eyebrow { color: #e3c47e; }
+[data-design="resort-luxe"] .p-hero.designed .p-hero-actions { justify-content: center; }
+[data-design="resort-luxe"] .fav-pill { border-radius: 2px; background: transparent; color: #fff; border: 1px solid #ffffff80; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+[data-design="resort-luxe"] .stay-summary { background: #1f4e5f; color: #f6f1e4; border-radius: 2px; }
+[data-design="resort-luxe"] .ss-line button { color: #e3c47e; }
+[data-design="resort-luxe"] .step.now { border-bottom-color: #c9a14a; }
+[data-design="resort-luxe"] .step.now i { background: #c9a14a; color: #1c2b2f; }
+[data-design="resort-luxe"] .step.done i { background: #1f4e5f; }
+[data-design="resort-luxe"] .step.done { color: #1f4e5f; }
+[data-design="resort-luxe"] .room-card, [data-design="resort-luxe"] .facts div, [data-design="resort-luxe"] .co-card, [data-design="resort-luxe"] .side-card { box-shadow: none; border: 1px solid var(--line); }
+[data-design="resort-luxe"] .room-info h3, [data-design="resort-luxe"] .co-hotel { font: 600 26px/1.15 var(--serif); }
+[data-design="resort-luxe"] .p-section h2, [data-design="resort-luxe"] .confirm-page h1 { font-weight: 500; }
+[data-design="resort-luxe"] .plan.on { border-color: #c9a14a; background: color-mix(in srgb, #c9a14a 8%, var(--paper)); }
+[data-design="resort-luxe"] .co-card-head, [data-design="resort-luxe"] .cart-bar { background: #1f4e5f; color: #f6f1e4; }
+[data-design="resort-luxe"] .cart-bar .primary { background: #c9a14a; color: #1c2b2f; }
+[data-design="resort-luxe"] .amenity-grid span, [data-design="resort-luxe"] .chips button { border-radius: 2px; }
+[data-design="resort-luxe"] .footer { background: #1f4e5f; color: #f6f1e4b3; border-top: 0; }
+[data-design="resort-luxe"] .footer .brand { color: #f6f1e4; font: 600 19px var(--serif); }

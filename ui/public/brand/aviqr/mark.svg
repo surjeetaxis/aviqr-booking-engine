@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AviQR Stays">
+  <rect width="64" height="64" rx="16" fill="#1f7257"/>
+  <circle cx="47" cy="17" r="5.5" fill="#d5a86b"/>
+  <path d="M14 44 L32 18 L50 44" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 44 v-6.5 a5 5 0 0 1 10 0 V44" fill="#fff"/>
+</svg>

@@ -8,6 +8,7 @@ import in.aviqr.booking.data.OtaFavorite;
 import in.aviqr.booking.data.OtaFavoriteRepository;
 import in.aviqr.booking.data.OtaPropertyView;
 import in.aviqr.booking.data.OtaPropertyViewRepository;
+import in.aviqr.booking.data.OtaStorefrontDesignRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
@@ -34,11 +35,12 @@ public class PublicBookingController {
     private final OtaBookingOrderRepository bookingOrders;
     private final OtaFavoriteRepository favorites;
     private final OtaPropertyViewRepository views;
+    private final OtaStorefrontDesignRepository designs;
     private final ObjectMapper mapper;
 
     PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand, OtaBookingOrderRepository bookingOrders,
-            OtaFavoriteRepository favorites, OtaPropertyViewRepository views, ObjectMapper mapper) {
-        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.views=views; this.mapper=mapper;
+            OtaFavoriteRepository favorites, OtaPropertyViewRepository views, OtaStorefrontDesignRepository designs, ObjectMapper mapper) {
+        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.views=views; this.designs=designs; this.mapper=mapper;
     }
 
     @GetMapping("/config") public Map<String,Object> config() {
@@ -53,6 +55,17 @@ public class PublicBookingController {
         }
         resolved.putIfAbsent("brand","AviQR Stays"); resolved.putIfAbsent("primary","#1f7257");
         resolved.putIfAbsent("accent","#d5a86b"); resolved.putIfAbsent("logo",""); resolved.putIfAbsent("supportEmail","");
+        UUID tenant=storefrontPropertyId(resolved);
+        if (tenant!=null) designs.findById(tenant).ifPresent(d -> {
+            Map<String,Object> design=new LinkedHashMap<>();
+            design.put("preset",d.getPreset());
+            if (d.getHeroTitle()!=null) design.put("heroTitle",d.getHeroTitle());
+            if (d.getTagline()!=null) design.put("tagline",d.getTagline());
+            if (d.getFaviconUrl()!=null) design.put("favicon",d.getFaviconUrl());
+            // The hotel's own logo from AviQR wins over the storefront design's artwork.
+            if (d.getLogoUrl()!=null && String.valueOf(resolved.get("logo")).isBlank()) resolved.put("logo",d.getLogoUrl());
+            resolved.put("design",design);
+        });
         return resolved;
     }
     @GetMapping("/domains/authorize") public ResponseEntity<Void> authorizeCustomDomain(@RequestParam String domain) {
