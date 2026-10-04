@@ -24,7 +24,7 @@ export default function Trips({ stays, navigate }) {
         <div>
           <span className="where">{p.city}</span>
           <h3>{p.name}</h3>
-          <p>{prettyDate(t.checkIn)} – {prettyDate(t.checkOut)} · {nights(t.checkIn, t.checkOut)} nights · {t.roomCount > 1 ? `${t.roomCount} rooms · ` : ''}{t.adults + (t.children || 0)} guests</p>
+          <p>{prettyDate(t.checkIn)} – {prettyDate(t.checkOut)} · {nights(t.checkIn, t.checkOut)} night{nights(t.checkIn, t.checkOut) === 1 ? '' : 's'} · {t.roomCount > 1 ? `${t.roomCount} rooms · ` : ''}{t.adults + (t.children || 0)} guests</p>
         </div>
         <div className="trip-side">
           <span className="ok">Confirmed</span>

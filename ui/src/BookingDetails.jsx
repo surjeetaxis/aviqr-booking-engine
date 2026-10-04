@@ -29,6 +29,10 @@ export default function BookingDetails({ bookingId, config, navigate }) {
     }).catch(() => setError(true));
   }, [bookingId]);
 
+  useEffect(() => {
+    if (booking && hotel) document.title = `Booking ${referenceOf(booking)} · ${hotel.name || 'Your stay'}`;
+  }, [booking, hotel]);
+
   if (error) {
     return <div className="page narrow"><div className="empty-card"><b>We couldn't find that booking.</b><button className="primary" onClick={() => navigate('/find')}>Find my booking</button></div></div>;
   }
