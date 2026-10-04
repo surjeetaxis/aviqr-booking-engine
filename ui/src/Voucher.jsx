@@ -112,7 +112,8 @@ export default function Voucher({ hotelId, reservationId, token, config, navigat
             <React.Fragment key={i}><dt>{x.description}</dt><dd className={x.amount < 0 ? 'ok' : ''}>{x.amount < 0 ? `− ${money(-x.amount)}` : money(x.amount)}</dd></React.Fragment>
           ))}
           <dt>Taxes & fees{voucher.taxesEstimated ? ' (est.)' : ''}</dt><dd>{money(voucher.taxes)}</dd>
-          <dt className="grand">{cancelled ? 'Total' : 'Pay at the hotel'}</dt><dd className="grand">{money(voucher.grandTotal)}</dd>
+          {Number(voucher.paid) > 0 && <><dt>Total</dt><dd>{money(voucher.grandTotal)}</dd><dt>Paid</dt><dd className="ok">− {money(voucher.paid)}</dd></>}
+          <dt className="grand">{cancelled ? 'Total' : 'Pay at the hotel'}</dt><dd className="grand">{money(cancelled ? voucher.grandTotal : (voucher.balanceDue ?? voucher.grandTotal))}</dd>
         </dl>
 
         {voucher.specialRequests && <p className="v-request"><b>Your request:</b> {voucher.specialRequests}</p>}

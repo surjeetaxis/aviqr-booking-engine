@@ -14,6 +14,9 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState(null);
   const [promoMsg, setPromoMsg] = useState('');
+  const [giftInput, setGiftInput] = useState('');
+  const [gift, setGift] = useState(null);
+  const [giftMsg, setGiftMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
@@ -34,6 +37,9 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const supported = !!extras?.supported;
   const addOns = extras?.addOns || [];
   const totals = checkoutTotals({ items, addOns, picks, taxes: extras?.taxes || [], promo, nights: n });
+  // A gift voucher pays what it can now; the PMS confirms the exact amount when booking.
+  const giftApplied = gift ? Math.min(Number(gift.balance) || 0, totals.grandTotal) : 0;
+  const dueAtHotel = Math.max(0, totals.grandTotal - giftApplied);
   const guests = Number(stay.adults) + Number(stay.children || 0);
   const capacity = items.reduce((s, i) => s + Number(i.roomType.maxOccupancy || 2), 0);
   const policies = [...new Set(items.map((i) => i.plan.cancellationPolicy).filter(Boolean))];
@@ -68,6 +74,21 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
     }
   }
 
+  async function applyGift(e) {
+    e.preventDefault();
+    const code = giftInput.trim();
+    if (!code) return;
+    setGiftMsg('');
+    try {
+      const g = await api.giftVoucher(hotelId, code);
+      setGift(g);
+      setGiftMsg(`Gift voucher ${g.code}: ${money(g.balance)} available`);
+    } catch (err) {
+      setGift(null);
+      setGiftMsg(err.status === 429 ? 'Too many tries. Please wait a few minutes.' : "That gift voucher isn't valid or has no balance left");
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     if (guests > capacity) return;
@@ -86,6 +107,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
         rooms: items.map((i) => ({ roomTypeId: i.roomType.roomTypeId, ratePlanId: i.plan.ratePlanId, roomId: i.room.roomId })),
         addOns: addOns.filter((a) => picks[a.id] > 0).map((a) => ({ addOnId: a.id, quantity: picks[a.id] })),
         ...(promo ? { promoCode: promo.code } : {}),
+        ...(gift ? { giftVoucherCode: gift.code } : {}),
       }, key);
       setDone({ ...result, shown: totals, items, guestEmail: supported ? form.guestEmail.trim() : '' });
       setStep('done');
@@ -128,7 +150,9 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             {totals.addOnTotal > 0 && <><dt>Add-ons</dt><dd>{money(totals.addOnTotal)}</dd></>}
             {totals.discount > 0 && <><dt>Promo {promo?.code}</dt><dd className="ok">− {money(totals.discount)}</dd></>}
             <dt>Taxes & fees{extras.taxes?.length ? ' (est.)' : ''}</dt><dd>{extras.taxes?.length ? money(totals.taxes) : 'At the hotel'}</dd>
-            <dt className="grand">Grand total</dt><dd className="grand">{money(totals.grandTotal)}</dd>
+            <dt className={giftApplied ? '' : 'grand'}>Grand total</dt><dd className={giftApplied ? '' : 'grand'}>{money(totals.grandTotal)}</dd>
+            {giftApplied > 0 && <><dt>Gift voucher {gift.code}</dt><dd className="ok">− {money(giftApplied)}</dd>
+              <dt className="grand">Pay at the hotel</dt><dd className="grand">{money(dueAtHotel)}</dd></>}
           </dl>
           {extras.taxes?.length > 0 && <p className="muted small">{extras.taxes.map((t) => `${t.name} ${t.valueType === 'PERCENT' ? `${Number(t.value)}%` : `${money(t.value)}/night`}`).join(' · ')}</p>}
         </div>
@@ -137,7 +161,10 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   );
 
   if (step === 'done') {
-    const t = done.grandTotal != null ? { roomTotal: done.totalBeforeTax, addOnTotal: done.addOnTotal, discount: done.discount, taxes: done.estimatedTaxes, grandTotal: done.grandTotal } : done.shown;
+    const t = done.grandTotal != null
+      ? { roomTotal: done.totalBeforeTax, addOnTotal: done.addOnTotal, discount: done.discount, taxes: done.estimatedTaxes, grandTotal: done.grandTotal,
+          voucherApplied: Number(done.voucherApplied) || 0, balanceDue: done.balanceDue ?? done.grandTotal }
+      : { ...done.shown, voucherApplied: 0, balanceDue: done.shown.grandTotal };
     return (
       <div className="checkout-page">
         <div className="flow-head"><Stepper current={4} skip={skip} /></div>
@@ -155,7 +182,8 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             {Number(t.addOnTotal) > 0 && <><dt>Add-ons</dt><dd>{money(t.addOnTotal)}</dd></>}
             {Number(t.discount) > 0 && <><dt>Discount</dt><dd className="ok">− {money(t.discount)}</dd></>}
             {Number(t.taxes) > 0 && <><dt>Taxes & fees (est.)</dt><dd>{money(t.taxes)}</dd></>}
-            <dt className="grand">Pay at the hotel</dt><dd className="grand">{money(t.grandTotal || 0)}</dd>
+            {t.voucherApplied > 0 && <><dt>Grand total</dt><dd>{money(t.grandTotal)}</dd><dt>Paid by gift voucher</dt><dd className="ok">− {money(t.voucherApplied)}</dd></>}
+            <dt className="grand">Pay at the hotel</dt><dd className="grand">{money(t.balanceDue || 0)}</dd>
           </dl>
           <div className="row-actions">
             {done.voucherToken
@@ -222,6 +250,16 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
                   </label>
                 )}
                 {supported && (
+                  <div className="field full">Gift voucher
+                    <span className="promo-row">
+                      <input value={giftInput} maxLength={40} onChange={(e) => setGiftInput(e.target.value.toUpperCase())} placeholder="Enter voucher code" aria-label="Gift voucher code"
+                        onKeyDown={(e) => e.key === 'Enter' && applyGift(e)} />
+                      <button type="button" className="secondary" onClick={gift ? () => { setGift(null); setGiftInput(''); setGiftMsg(''); } : applyGift}>{gift ? 'Remove' : 'Apply'}</button>
+                    </span>
+                    {giftMsg && <small className={gift ? 'ok' : 'warn'}>{giftMsg}</small>}
+                  </div>
+                )}
+                {supported && (
                   <div className="field full">Promo code
                     <span className="promo-row">
                       <input value={promoInput} maxLength={32} onChange={(e) => setPromoInput(e.target.value.toUpperCase())} placeholder="Enter code" aria-label="Promo code"
@@ -249,7 +287,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
       </div>
 
       <div className="cart-bar">
-        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · total</small><b>{money(totals.grandTotal)}</b></div>
+        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · {giftApplied ? 'pay at hotel' : 'total'}</small><b>{money(dueAtHotel)}</b></div>
         {step === 'addons' ? (
           <div className="row-actions">
             <button className="ghost" onClick={() => { setPicks({}); setStep('details'); }}>Skip</button>
@@ -257,7 +295,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
           </div>
         ) : (
           <button className="primary" type="submit" form="guest-form" disabled={busy || guests > capacity}>
-            {busy ? 'Confirming with the hotel…' : `Confirm booking · ${money(totals.grandTotal)}`}
+            {busy ? 'Confirming with the hotel…' : `Confirm booking · ${money(dueAtHotel)}`}
           </button>
         )}
       </div>
