@@ -21,6 +21,12 @@ public class OtaBookingOrder {
     @Column(nullable=false) private Integer adults;
     @Column(nullable=false) private Integer children;
     @Column(name="total_before_tax", precision=12, scale=2) private BigDecimal totalBeforeTax;
+    @Column(name="room_count", nullable=false) private Integer roomCount=1;
+    @Column(name="request_fingerprint", length=64) private String requestFingerprint;
+    @Column(name="addon_total", precision=12, scale=2) private BigDecimal addOnTotal;
+    @Column(name="discount_total", precision=12, scale=2) private BigDecimal discountTotal;
+    @Column(name="estimated_taxes", precision=12, scale=2) private BigDecimal estimatedTaxes;
+    @Column(name="grand_total", precision=12, scale=2) private BigDecimal grandTotal;
     @Column(length=3) private String currency;
     @Column(nullable=false, length=16) private String status;
     @Column(name="created_at", nullable=false) private Instant createdAt;
@@ -37,6 +43,13 @@ public class OtaBookingOrder {
         this.pmsReservationId=pmsReservationId; this.totalBeforeTax=totalBeforeTax; this.currency=currency;
         this.status="CONFIRMED"; this.updatedAt=Instant.now();
     }
+    /** Records a multi-room/extras checkout: the first room stays in room_type_id/room_id for older readers. */
+    public void describe(int roomCount, String requestFingerprint) {
+        this.roomCount=roomCount; this.requestFingerprint=requestFingerprint;
+    }
+    public void totals(BigDecimal addOnTotal, BigDecimal discountTotal, BigDecimal estimatedTaxes, BigDecimal grandTotal) {
+        this.addOnTotal=addOnTotal; this.discountTotal=discountTotal; this.estimatedTaxes=estimatedTaxes; this.grandTotal=grandTotal;
+    }
     public void fail() { this.status="FAILED"; this.updatedAt=Instant.now(); }
     public UUID getId(){return id;} public String getRequestId(){return requestId;}
     public UUID getPmsReservationId(){return pmsReservationId;} public UUID getPropertyId(){return propertyId;}
@@ -46,4 +59,7 @@ public class OtaBookingOrder {
     public BigDecimal getTotalBeforeTax(){return totalBeforeTax;} public String getCurrency(){return currency;}
     public String getStatus(){return status;} public UUID getVisitorId(){return visitorId;}
     public Instant getCreatedAt(){return createdAt;}
+    public Integer getRoomCount(){return roomCount;} public String getRequestFingerprint(){return requestFingerprint;}
+    public BigDecimal getAddOnTotal(){return addOnTotal;} public BigDecimal getDiscountTotal(){return discountTotal;}
+    public BigDecimal getEstimatedTaxes(){return estimatedTaxes;} public BigDecimal getGrandTotal(){return grandTotal;}
 }

@@ -17,11 +17,14 @@ export default function StayBar({ stay, setStay, compact = false }) {
     <div className={`staybar ${compact ? 'compact' : ''}`}>
       <label><span>Check in</span><input type="date" min={dateIn(0)} value={stay.checkIn} onChange={set('checkIn')} /></label>
       <label><span>Check out</span><input type="date" min={nextDay(stay.checkIn)} value={stay.checkOut} onChange={set('checkOut')} /></label>
+      <label><span>Rooms</span>
+        <select value={stay.rooms || 1} onChange={set('rooms')}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+      </label>
       <label><span>Adults</span>
-        <select value={stay.adults} onChange={set('adults')}>{[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        <select value={stay.adults} onChange={set('adults')}>{Array.from({ length: 18 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}</select>
       </label>
       <label><span>Children</span>
-        <select value={stay.children} onChange={set('children')}>{[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        <select value={stay.children} onChange={set('children')}>{Array.from({ length: 9 }, (_, i) => i).map((n) => <option key={n} value={n}>{n}</option>)}</select>
       </label>
     </div>
   );

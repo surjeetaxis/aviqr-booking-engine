@@ -4,6 +4,7 @@ import { api, dateIn } from './api.js';
 import Home from './Home.jsx';
 import Property from './Property.jsx';
 import Trips from './Trips.jsx';
+import Checkout from './Checkout.jsx';
 import './style.css';
 
 const readRoute = () => window.location.hash.replace(/^#/, '') || (window.location.pathname.startsWith('/stay/') ? window.location.pathname : '/');
@@ -27,7 +28,31 @@ function initialStay() {
     const s = JSON.parse(sessionStorage.getItem('aviqr-stay'));
     if (s?.checkIn >= dateIn(0) && s.checkOut > s.checkIn) return s;
   } catch { /* fall through to defaults */ }
-  return { checkIn: dateIn(1), checkOut: dateIn(3), adults: 2, children: 0 };
+  return { checkIn: dateIn(1), checkOut: dateIn(3), rooms: 1, adults: 2, children: 0 };
+}
+
+const readSession = (k, fallback) => {
+  try { return JSON.parse(sessionStorage.getItem(k)) ?? fallback; } catch { return fallback; }
+};
+const writeSession = (k, v) => {
+  try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ }
+};
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('aviqr-theme') || ''; } catch { return ''; }
+  });
+  useEffect(() => {
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+  }, [theme]);
+  const dark = theme ? theme === 'dark' : window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+  const toggle = () => {
+    const next = dark ? 'light' : 'dark';
+    setTheme(next);
+    try { localStorage.setItem('aviqr-theme', next); } catch { /* storage unavailable */ }
+  };
+  return [dark, toggle];
 }
 
 function App() {
@@ -40,10 +65,10 @@ function App() {
   const [error, setError] = useState('');
   const [favorites, setFavorites] = useState([]);
   const [stay, setStayState] = useState(initialStay);
-  const setStay = (s) => {
-    setStayState(s);
-    try { sessionStorage.setItem('aviqr-stay', JSON.stringify(s)); } catch { /* storage unavailable */ }
-  };
+  const setStay = (s) => { setStayState(s); writeSession('aviqr-stay', s); };
+  const [cart, setCartState] = useState(() => readSession('aviqr-cart', { items: [] }));
+  const setCart = (c) => { setCartState(c); writeSession('aviqr-cart', c); };
+  const [dark, toggleTheme] = useTheme();
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => {}).finally(() => setConfigReady(true));
@@ -82,6 +107,14 @@ function App() {
   const stayId = routeStayKey && /^[0-9a-f-]{36}$/i.test(routeStayKey) ? routeStayKey
     : config.mode === 'TENANT' ? config.propertyId : null;
   const tenantStorefront = config.mode === 'TENANT';
+  const checkoutRoute = /\/checkout$/.test(route);
+  // The cart belongs to one hotel and one set of dates; changing either starts over.
+  const cartItems = cart.hotelId === stayId && cart.checkIn === stay.checkIn && cart.checkOut === stay.checkOut ? cart.items : [];
+  const base = { hotelId: stayId, checkIn: stay.checkIn, checkOut: stay.checkOut };
+  const addToCart = (item, replace) => setCart({ ...base, items: replace ? [item] : [...cartItems, item] });
+  const removeFromCart = (key) => setCart({ ...base, items: cartItems.filter((i) => i.key !== key) });
+  const roomsPath = tenantStorefront ? `/stay/${config.propertyId}` : `/stay/${stayId}`;
+  const checkoutPath = `${roomsPath}/checkout`;
 
   return (
     <>
@@ -93,14 +126,19 @@ function App() {
         <nav>
           {!tenantStorefront && <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>}
           <a href="#/trips" className={route === '/trips' ? 'on' : ''}>My trips</a>
+          <button className="theme-toggle" onClick={toggleTheme} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? '☀' : '☾'}</button>
           {!tenantStorefront && <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
             Saved{favorites.length ? <b>{favorites.length}</b> : null}
           </a>}
         </nav>
       </header>
       <main>
-        {!configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId ? (
-          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} tenant={tenantStorefront} />
+        {!configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && checkoutRoute ? (
+          <Checkout hotelId={stayId} stay={stay} items={cartItems} navigate={navigate} tenant={tenantStorefront}
+            onBackToRooms={() => navigate(roomsPath)} onBooked={() => setCart({ items: [] })} />
+        ) : stayId ? (
+          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} tenant={tenantStorefront}
+            cartItems={cartItems} onAdd={addToCart} onRemove={removeFromCart} onContinue={() => navigate(checkoutPath)} />
         ) : route === '/trips' ? (
           <Trips stays={stays} navigate={navigate} />
         ) : (

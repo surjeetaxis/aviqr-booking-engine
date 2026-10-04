@@ -54,6 +54,8 @@ export const api = {
   recordView: (id) => request(`/properties/${id}/views?${vid()}`, { method: 'POST' }).catch(() => {}),
   roomTypes: (id) => request(`/properties/${id}/room-types`),
   quote: (id, p) => request(`/properties/${id}/quote?${qs(p)}`),
+  extras: (id) => request(`/properties/${id}/extras`).catch(() => ({ supported: false, addOns: [], taxes: [] })),
+  promo: (id, p) => request(`/properties/${id}/promo?${qs(p)}`),
   roomMap: (id, p) => request(`/properties/${id}/room-map?${qs(p)}`),
   favorites: () => request(`/favorites?${vid()}`),
   saveFavorite: (id, on) => request(`/favorites/${id}?${vid()}`, { method: on ? 'PUT' : 'DELETE' }),

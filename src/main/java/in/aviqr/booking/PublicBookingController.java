@@ -148,6 +148,32 @@ public class PublicBookingController {
         return get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}", hotelId, roomTypeId, ratePlanId, checkIn, checkOut,requestHost(),requestSlug());
     }
 
+    /** Add-ons and taxes; supported=false means this PMS can't take multi-room, add-on or promo checkouts yet. */
+    @GetMapping("/properties/{hotelId}/extras") public Map<String,Object> extras(@PathVariable UUID hotelId) {
+        requireAllowed(hotelId);
+        try {
+            JsonNode data=mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/extras?storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+            return Map.of("supported",true,"addOns",mapper.convertValue(data.path("addOns"),List.class),"taxes",mapper.convertValue(data.path("taxes"),List.class));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of("supported",false,"addOns",List.of(),"taxes",List.of());
+            throw new OtaUpstreamException(e);
+        }
+    }
+    @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
+            @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
+            @RequestParam(required=false) LocalDate checkIn) {
+        requireAllowed(hotelId);
+        try {
+            return ResponseEntity.ok(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/promo?code={code}&roomTotal={total}&checkIn={in}&storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,code.trim(),roomTotal.max(BigDecimal.ZERO),checkIn==null?"":checkIn,requestHost(),requestSlug()).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404||e.getStatusCode().value()==400)
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","That promo code isn't valid for this stay"));
+            throw new OtaUpstreamException(e);
+        }
+    }
+
     @GetMapping("/favorites") public List<UUID> favoriteProperties(@RequestParam UUID visitorId) {
         return favorites.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream().map(OtaFavorite::getPropertyId).toList();
     }
@@ -164,16 +190,24 @@ public class PublicBookingController {
     public ResponseEntity<Object> book(@PathVariable UUID hotelId, @Valid @RequestBody BookingRequest request,
             @RequestHeader(value="Idempotency-Key", required=false) UUID suppliedKey) {
         requireAllowed(hotelId);
+        List<RoomLine> lines=request.lines();
+        if (lines.isEmpty()) return ResponseEntity.badRequest().body(Map.of("message","Choose at least one room"));
+        if (lines.stream().map(RoomLine::roomId).distinct().count()!=lines.size())
+            return ResponseEntity.badRequest().body(Map.of("message","Each room can only be chosen once"));
+        boolean advanced=lines.size()>1||!request.addOnLines().isEmpty()||(request.promoCode()!=null&&!request.promoCode().isBlank());
+        // An older PMS ignores unknown fields and would book only the first room, so never send it extras.
+        if (advanced&&!Boolean.TRUE.equals(extras(hotelId).get("supported")))
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","This hotel can't take multi-room, add-on or promo bookings online yet"));
         UUID requestId=suppliedKey!=null?suppliedKey:UUID.randomUUID();
+        String fingerprint=fingerprint(hotelId,request,lines);
         OtaBookingOrder order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
         if (order!=null && "CONFIRMED".equals(order.getStatus())) return ResponseEntity.ok(confirmation(order));
-        if (order!=null && (!order.getPropertyId().equals(hotelId) || !order.getRoomId().equals(request.roomId())
-                || !order.getRoomTypeId().equals(request.roomTypeId()) || !order.getCheckIn().equals(request.checkInDate())
-                || !order.getCheckOut().equals(request.checkOutDate()) || !order.getAdults().equals(request.adults())
-                || !order.getChildren().equals(request.children())))
+        if (order!=null && !fingerprint.equals(order.getRequestFingerprint()))
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","Idempotency key was already used for a different booking"));
+        RoomLine first=lines.getFirst();
         if (order==null) {
-            order=new OtaBookingOrder(requestId,request.visitorId(),hotelId,request.roomTypeId(),request.roomId(),request.checkInDate(),request.checkOutDate(),request.adults(),request.children());
+            order=new OtaBookingOrder(requestId,request.visitorId(),hotelId,first.roomTypeId(),first.roomId(),request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount());
+            order.describe(lines.size(),fingerprint);
             try { order=bookingOrders.saveAndFlush(order); }
             catch (DataIntegrityViolationException duplicate) {
                 order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
@@ -182,24 +216,43 @@ public class PublicBookingController {
             }
         }
         try {
-            Object price=get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}",
-                hotelId,request.roomTypeId(),request.ratePlanId(),request.checkInDate(),request.checkOutDate(),requestHost(),requestSlug());
-            JsonNode quote=mapper.valueToTree(price).path("data");
-            BigDecimal total=quote.path("totalBeforeTax").isNumber()?quote.path("totalBeforeTax").decimalValue():null;
-            String currency=quote.path("currency").asText("INR");
-            PmsBookingRequest pmsRequest=new PmsBookingRequest(request.guestName(),request.guestPhone(),request.checkInDate(),
-                request.checkOutDate(),request.adults(),request.children(),request.roomTypeId(),request.ratePlanId(),request.roomId(),requestId,requestHost(),requestSlug());
+            BigDecimal roomTotal=BigDecimal.ZERO;
+            String currency="INR";
+            for (RoomLine line:lines) {
+                JsonNode quote=mapper.valueToTree(get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}",
+                    hotelId,line.roomTypeId(),line.ratePlanId(),request.checkInDate(),request.checkOutDate(),requestHost(),requestSlug())).path("data");
+                if (!quote.path("totalBeforeTax").isNumber()) throw new IllegalArgumentException("Missing quote");
+                roomTotal=roomTotal.add(quote.path("totalBeforeTax").decimalValue());
+                currency=quote.path("currency").asText(currency);
+            }
+            Object body=advanced
+                ? new PmsCheckoutRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
+                    request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),lines,request.addOnLines(),blankToNull(request.promoCode()),
+                    requestId,requestHost(),requestSlug())
+                : new PmsBookingRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
+                    request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),first.roomTypeId(),first.ratePlanId(),first.roomId(),
+                    requestId,requestHost(),requestSlug());
             Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book",hotelId)
-                .contentType(MediaType.APPLICATION_JSON).body(pmsRequest).retrieve().body(Object.class);
+                .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(Object.class);
             JsonNode reservation=mapper.valueToTree(result).path("data");
-            String pmsIdValue=reservation.path("reservationId").asText(reservation.path("id").asText());
-            UUID pmsId=UUID.fromString(pmsIdValue);
-            order.confirm(pmsId,total,currency);
+            UUID pmsId=UUID.fromString(reservation.path("reservationId").asText(reservation.path("id").asText()));
+            JsonNode totals=reservation.path("totals");
+            if (totals.isObject()) {
+                roomTotal=decimal(totals,"roomTotal",roomTotal);
+                order.totals(decimal(totals,"addOnTotal",null),decimal(totals,"discount",null),decimal(totals,"estimatedTaxes",null),decimal(totals,"grandTotal",null));
+            }
+            order.confirm(pmsId,roomTotal,currency);
             order=bookingOrders.save(order);
             return ResponseEntity.ok(confirmation(order));
         } catch (RestClientResponseException e) {
             order.fail(); bookingOrders.save(order);
-            return ResponseEntity.status(e.getStatusCode()).body(Map.of("message","PMS could not complete this booking","upstreamStatus",e.getStatusCode().value()));
+            JsonNode upstream=readJson(e.getResponseBodyAsString());
+            String message=e.getStatusCode().value()==400&&upstream.path("message").isTextual()
+                ? upstream.path("message").asText() : "The hotel could not confirm this booking";
+            return ResponseEntity.status(e.getStatusCode()).body(Map.of("message",message,"upstreamStatus",e.getStatusCode().value()));
+        } catch (OtaUpstreamException e) {
+            order.fail(); bookingOrders.save(order);
+            throw e;
         } catch (IllegalArgumentException e) {
             order.fail(); bookingOrders.save(order);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message","PMS returned an invalid booking confirmation"));
@@ -219,7 +272,27 @@ public class PublicBookingController {
         data.put("roomTypeId",o.getRoomTypeId()); data.put("roomId",o.getRoomId()); data.put("checkIn",o.getCheckIn());
         data.put("checkOut",o.getCheckOut()); data.put("adults",o.getAdults()); data.put("children",o.getChildren());
         data.put("totalBeforeTax",o.getTotalBeforeTax()); data.put("currency",o.getCurrency()); data.put("createdAt",o.getCreatedAt());
+        data.put("roomCount",o.getRoomCount()); data.put("addOnTotal",o.getAddOnTotal()); data.put("discount",o.getDiscountTotal());
+        data.put("estimatedTaxes",o.getEstimatedTaxes()); data.put("grandTotal",o.getGrandTotal());
         return data;
+    }
+    private static String blankToNull(String v) { return v==null||v.isBlank()?null:v.trim(); }
+    private static BigDecimal decimal(JsonNode node,String field,BigDecimal fallback) {
+        return node.path(field).isNumber()?node.path(field).decimalValue():fallback;
+    }
+    private JsonNode readJson(String body) {
+        try { return mapper.readTree(body==null||body.isBlank()?"{}":body); } catch (Exception e) { return mapper.createObjectNode(); }
+    }
+    /** Same key + same booking → same fingerprint, so a retry is recognised and a reused key is rejected. */
+    private String fingerprint(UUID hotelId,BookingRequest r,List<RoomLine> lines) {
+        String canonical=String.join("|",hotelId.toString(),String.valueOf(r.checkInDate()),String.valueOf(r.checkOutDate()),
+            String.valueOf(r.adults()),String.valueOf(r.childCount()),r.guestPhone().trim(),
+            lines.stream().map(l->l.roomTypeId()+"/"+l.ratePlanId()+"/"+l.roomId()).sorted().collect(Collectors.joining(",")),
+            r.addOnLines().stream().map(a->a.addOnId()+"x"+a.quantity()).sorted().collect(Collectors.joining(",")),
+            String.valueOf(blankToNull(r.promoCode())).toUpperCase(Locale.ROOT));
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
     private Object get(String path,Object... vars) {
         try { return aviQr.get().uri(path,vars).retrieve().body(Object.class); }
@@ -291,11 +364,26 @@ public class PublicBookingController {
     }
     public record BookingRequest(@NotBlank @Size(max=120) String guestName,
         @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String guestPhone,
+        @Email @Size(max=254) String guestEmail, @Size(max=200) String specialRequests,
         @NotNull @FutureOrPresent LocalDate checkInDate,@NotNull @Future LocalDate checkOutDate,
-        @NotNull @Min(1) @Max(12) Integer adults,@Min(0) @Max(12) Integer children,
-        @NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId,UUID visitorId) { }
-    private record PmsBookingRequest(String guestName,String guestPhone,LocalDate checkInDate,LocalDate checkOutDate,
+        @NotNull @Min(1) @Max(36) Integer adults,@Min(0) @Max(24) Integer children,
+        UUID roomTypeId,UUID ratePlanId,UUID roomId,
+        @Size(max=9) List<@Valid RoomLine> rooms, @Size(max=10) List<@Valid AddOnLine> addOns,
+        @Size(max=32) String promoCode, UUID visitorId) {
+        /** The rooms list, or the older single-room fields. */
+        List<RoomLine> lines() {
+            if (rooms!=null&&!rooms.isEmpty()) return rooms;
+            return roomTypeId!=null&&ratePlanId!=null&&roomId!=null ? List.of(new RoomLine(roomTypeId,ratePlanId,roomId)) : List.of();
+        }
+        List<AddOnLine> addOnLines() { return addOns==null?List.of():addOns; }
+        int childCount() { return children==null?0:children; }
+    }
+    public record RoomLine(@NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId) { }
+    public record AddOnLine(@NotNull UUID addOnId,@NotNull @Min(1) @Max(20) Integer quantity) { }
+    private record PmsBookingRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
         Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
+    private record PmsCheckoutRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
+        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     @RestControllerAdvice static class Errors {
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
             return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));

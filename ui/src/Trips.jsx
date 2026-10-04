@@ -22,11 +22,11 @@ export default function Trips({ stays, navigate }) {
         <div>
           <span className="where">{p.city}</span>
           <h3>{p.name}</h3>
-          <p>{prettyDate(t.checkIn)} – {prettyDate(t.checkOut)} · {nights(t.checkIn, t.checkOut)} nights · {t.adults + (t.children || 0)} guests</p>
+          <p>{prettyDate(t.checkIn)} – {prettyDate(t.checkOut)} · {nights(t.checkIn, t.checkOut)} nights · {t.roomCount > 1 ? `${t.roomCount} rooms · ` : ''}{t.adults + (t.children || 0)} guests</p>
         </div>
         <div className="trip-side">
           <span className="ok">Confirmed</span>
-          {t.totalBeforeTax != null && <b>{money(t.totalBeforeTax, t.currency || 'INR')}</b>}
+          {(t.grandTotal ?? t.totalBeforeTax) != null && <b>{money(t.grandTotal ?? t.totalBeforeTax, t.currency || 'INR')}</b>}
           <small>Ref {String(t.reservationId || t.bookingId).slice(0, 8).toUpperCase()}</small>
         </div>
       </article>
