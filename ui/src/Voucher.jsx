@@ -116,6 +116,12 @@ export default function Voucher({ hotelId, reservationId, token, config, navigat
           <dt className="grand">{cancelled ? 'Total' : 'Pay at the hotel'}</dt><dd className="grand">{money(cancelled ? voucher.grandTotal : (voucher.balanceDue ?? voucher.grandTotal))}</dd>
         </dl>
 
+        {voucher.preCheckinUrl && (
+          <a className="v-precheckin no-print" href={voucher.preCheckinUrl} target="_blank" rel="noreferrer">
+            <b>Check in online</b><span>Add your ID details and sign the registration card now, and skip the queue at the desk →</span>
+          </a>
+        )}
+        {voucher.preCheckedIn && voucher.status === 'BOOKED' && <p className="v-request ok"><b>✓ Online check-in complete.</b> Show this QR at the desk to collect your key.</p>}
         {voucher.specialRequests && <p className="v-request"><b>Your request:</b> {voucher.specialRequests}</p>}
         {policies.length > 0 && <div className="policy"><b>Cancellation policy</b>{policies.map((p) => <p key={p}>{p}</p>)}</div>}
         <footer className="v-foot">
