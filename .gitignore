@@ -5,3 +5,4 @@
 /ui/dist/
 /.data/
 /.idea/
+/.caddyfile.sha256

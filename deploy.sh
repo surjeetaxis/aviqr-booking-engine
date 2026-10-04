@@ -18,5 +18,12 @@ if [[ -z "${DOMAIN:-}" || -z "${AVIQR_CORE_API:-}" || -z "${DATABASE_PASSWORD:-}
   exit 2
 fi
 docker compose up --build -d
+# Caddy bind-mounts deploy/Caddyfile, and a deploy replaces that file, so a running
+# Caddy keeps the old copy. Recreate it whenever the Caddyfile changed.
+caddy_sum=$(sha256sum deploy/Caddyfile | cut -d' ' -f1)
+if [[ "$(cat .caddyfile.sha256 2>/dev/null)" != "$caddy_sum" ]]; then
+  docker compose up -d --force-recreate --no-deps caddy
+  echo "$caddy_sum" > .caddyfile.sha256
+fi
 echo "Booking engine deployed for ${DOMAIN}"
 docker compose ps
