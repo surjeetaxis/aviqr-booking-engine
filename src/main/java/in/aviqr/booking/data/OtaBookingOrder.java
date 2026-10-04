@@ -27,6 +27,8 @@ public class OtaBookingOrder {
     @Column(name="discount_total", precision=12, scale=2) private BigDecimal discountTotal;
     @Column(name="estimated_taxes", precision=12, scale=2) private BigDecimal estimatedTaxes;
     @Column(name="grand_total", precision=12, scale=2) private BigDecimal grandTotal;
+    @Column(length=16) private String reference;
+    @Column(name="voucher_token", length=64) private String voucherToken;
     @Column(length=3) private String currency;
     @Column(nullable=false, length=16) private String status;
     @Column(name="created_at", nullable=false) private Instant createdAt;
@@ -50,6 +52,7 @@ public class OtaBookingOrder {
     public void totals(BigDecimal addOnTotal, BigDecimal discountTotal, BigDecimal estimatedTaxes, BigDecimal grandTotal) {
         this.addOnTotal=addOnTotal; this.discountTotal=discountTotal; this.estimatedTaxes=estimatedTaxes; this.grandTotal=grandTotal;
     }
+    public void voucher(String reference, String voucherToken) { this.reference=reference; this.voucherToken=voucherToken; }
     public void fail() { this.status="FAILED"; this.updatedAt=Instant.now(); }
     public UUID getId(){return id;} public String getRequestId(){return requestId;}
     public UUID getPmsReservationId(){return pmsReservationId;} public UUID getPropertyId(){return propertyId;}
@@ -62,4 +65,5 @@ public class OtaBookingOrder {
     public Integer getRoomCount(){return roomCount;} public String getRequestFingerprint(){return requestFingerprint;}
     public BigDecimal getAddOnTotal(){return addOnTotal;} public BigDecimal getDiscountTotal(){return discountTotal;}
     public BigDecimal getEstimatedTaxes(){return estimatedTaxes;} public BigDecimal getGrandTotal(){return grandTotal;}
+    public String getReference(){return reference;} public String getVoucherToken(){return voucherToken;}
 }

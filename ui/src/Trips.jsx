@@ -27,7 +27,10 @@ export default function Trips({ stays, navigate }) {
         <div className="trip-side">
           <span className="ok">Confirmed</span>
           {(t.grandTotal ?? t.totalBeforeTax) != null && <b>{money(t.grandTotal ?? t.totalBeforeTax, t.currency || 'INR')}</b>}
-          <small>Ref {String(t.reservationId || t.bookingId).slice(0, 8).toUpperCase()}</small>
+          <small>Ref {t.reference || String(t.reservationId || t.bookingId).slice(0, 8).toUpperCase()}</small>
+          {t.voucherToken && (
+            <button className="text-link" onClick={(e) => { e.stopPropagation(); navigate(`/voucher/${t.hotelId}/${t.reservationId}/${t.voucherToken}`); }}>Voucher →</button>
+          )}
         </div>
       </article>
     );

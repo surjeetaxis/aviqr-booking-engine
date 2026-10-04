@@ -5,6 +5,8 @@ import Home from './Home.jsx';
 import Property from './Property.jsx';
 import Trips from './Trips.jsx';
 import Checkout from './Checkout.jsx';
+import Voucher from './Voucher.jsx';
+import FindBooking from './FindBooking.jsx';
 import { applyBrand, logoFor } from './brand.js';
 import './style.css';
 
@@ -110,6 +112,7 @@ function App() {
     : config.mode === 'TENANT' ? config.propertyId : null;
   const tenantStorefront = config.mode === 'TENANT';
   const checkoutRoute = /\/checkout$/.test(route);
+  const voucherRoute = route.match(/^\/voucher\/([0-9a-f-]{36})\/([0-9a-f-]{36})\/([A-Za-z0-9_-]{8,64})$/i);
   // The cart belongs to one hotel and one set of dates; changing either starts over.
   const cartItems = cart.hotelId === stayId && cart.checkIn === stay.checkIn && cart.checkOut === stay.checkOut ? cart.items : [];
   const base = { hotelId: stayId, checkIn: stay.checkIn, checkOut: stay.checkOut };
@@ -128,6 +131,7 @@ function App() {
         <nav>
           {!tenantStorefront && <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>}
           <a href="#/trips" className={route === '/trips' ? 'on' : ''}>My trips</a>
+          <a href="#/find" className={route === '/find' ? 'on' : ''}>Find booking</a>
           <button className="theme-toggle" onClick={toggleTheme} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? '☀' : '☾'}</button>
           {!tenantStorefront && <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
             Saved{favorites.length ? <b>{favorites.length}</b> : null}
@@ -135,7 +139,11 @@ function App() {
         </nav>
       </header>
       <main>
-        {!configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && checkoutRoute ? (
+        {voucherRoute ? (
+          <Voucher hotelId={voucherRoute[1]} reservationId={voucherRoute[2]} token={voucherRoute[3]} config={config} navigate={navigate} />
+        ) : route === '/find' ? (
+          <FindBooking navigate={navigate} />
+        ) : !configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && checkoutRoute ? (
           <Checkout hotelId={stayId} stay={stay} items={cartItems} navigate={navigate} tenant={tenantStorefront}
             onBackToRooms={() => navigate(roomsPath)} onBooked={() => setCart({ items: [] })} />
         ) : stayId ? (

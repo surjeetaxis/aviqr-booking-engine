@@ -253,6 +253,8 @@ public class PublicBookingController {
                 .retrieve().body(Object.class);
             JsonNode reservation=mapper.valueToTree(result).path("data");
             UUID pmsId=UUID.fromString(reservation.path("reservationId").asText(reservation.path("id").asText()));
+            if (reservation.path("voucherToken").isTextual())
+                order.voucher(reservation.path("reference").asText(null),reservation.path("voucherToken").asText());
             JsonNode totals=reservation.path("totals");
             if (totals.isObject()) {
                 roomTotal=decimal(totals,"roomTotal",roomTotal);
@@ -277,6 +279,34 @@ public class PublicBookingController {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message","PMS returned an invalid booking confirmation"));
         }
     }
+    /** The guest's voucher; the PMS checks the signed token. */
+    @GetMapping("/vouchers/{hotelId}/{reservationId}") public Object voucher(@PathVariable UUID hotelId, @PathVariable UUID reservationId,
+            @RequestParam @Size(max=64) String token) {
+        requireAllowed(hotelId);
+        return get("/api/v1/pms/public/booking-engine/{id}/reservations/{res}/voucher?token={token}",hotelId,reservationId,token);
+    }
+    @PostMapping("/vouchers/{hotelId}/{reservationId}/email") public ResponseEntity<Object> emailVoucher(@PathVariable UUID hotelId,
+            @PathVariable UUID reservationId, @RequestParam @Size(max=64) String token) {
+        requireAllowed(hotelId);
+        try {
+            return ResponseEntity.ok(aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/reservations/{res}/voucher/email?token={token}&storefrontHost={host}",
+                hotelId,reservationId,token,requestHost()).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            JsonNode upstream=readJson(e.getResponseBodyAsString());
+            return ResponseEntity.status(e.getStatusCode()).body(Map.of("message",upstream.path("message").asText("The voucher couldn't be emailed")));
+        }
+    }
+    @GetMapping("/bookings/find") public ResponseEntity<Object> findBooking(@RequestParam @Size(max=16) String reference,
+            @RequestParam @Size(max=24) String phone) {
+        try {
+            JsonNode found=mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/reservations/find?reference={ref}&phone={phone}",
+                reference.trim(),phone.trim()).retrieve().body(Object.class)).path("data");
+            requireAllowed(UUID.fromString(found.path("hotelId").asText()));
+            return ResponseEntity.ok(mapper.convertValue(found,Map.class));
+        } catch (RestClientResponseException|ResponseStatusException|OtaUpstreamException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","No booking matches that reference and phone on this site"));
+        }
+    }
     @GetMapping("/bookings/{bookingId}") public ResponseEntity<Object> booking(@PathVariable UUID bookingId) {
         return bookingOrders.findById(bookingId).map(o -> ResponseEntity.ok(confirmation(o)))
             .orElseGet(() -> ResponseEntity.notFound().build());
@@ -293,6 +323,7 @@ public class PublicBookingController {
         data.put("totalBeforeTax",o.getTotalBeforeTax()); data.put("currency",o.getCurrency()); data.put("createdAt",o.getCreatedAt());
         data.put("roomCount",o.getRoomCount()); data.put("addOnTotal",o.getAddOnTotal()); data.put("discount",o.getDiscountTotal());
         data.put("estimatedTaxes",o.getEstimatedTaxes()); data.put("grandTotal",o.getGrandTotal());
+        data.put("reference",o.getReference()); data.put("voucherToken",o.getVoucherToken());
         return data;
     }
     private static String blankToNull(String v) { return v==null||v.isBlank()?null:v.trim(); }
