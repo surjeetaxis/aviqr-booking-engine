@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { hasMedia, tourLabel, withTypeMedia } from './RoomTour.jsx';
 
 const floorName = (f) => (f == null || f === '' ? 'Rooms' : /^\d+$/.test(String(f)) ? `Floor ${f}` : String(f));
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
@@ -63,7 +64,7 @@ export default function RoomPicker({ rooms, selectedId, onSelect, onPreview }) {
             <b>{[floorName(chosen.floor), chosen.side, chosen.view].filter(Boolean).join(' · ')}</b>
             <small>The hotel shares the room number at check-in. This exact room is reserved for you when you book.</small>
           </div>
-          <button className="ghost" onClick={() => onPreview(chosen)}>◉ Tour this room</button>
+          <button className="ghost" onClick={() => onPreview(chosen)}>◉ {tourLabel(withTypeMedia(chosen, rooms))}</button>
         </div>
       ) : (
         <p className="pick-hint">Tap a green room to choose your side and view.</p>
@@ -90,10 +91,11 @@ function FloorPlan({ name, rooms, sides, selectedId, matches, onSelect }) {
         className={`unit ${free ? 'free' : 'booked'} ${pick ? 'chosen' : ''} ${matches(r) ? '' : 'faded'}`}
         onClick={() => onSelect(r.roomId)}
         aria-pressed={pick}
-        aria-label={`${free ? 'Available' : 'Booked'} room${r.side ? `, ${r.side}` : ''}${r.view ? `, ${r.view}` : ''}`}
+        aria-label={`${free ? 'Available' : 'Booked'} room${r.side ? `, ${r.side}` : ''}${r.view ? `, ${r.view}` : ''}${hasMedia(r) ? ', hotel tour available' : ''}`}
         title={[r.side, r.view].filter(Boolean).join(' · ') || (free ? 'Available' : 'Booked')}
       >
         <span>{pick ? '★' : free ? '' : '×'}</span>
+        {hasMedia(r) && <i className="has-tour" title="Hotel tour available">◉</i>}
         {r.view && <small>{r.view.replace(/\s*view$/i, '')}</small>}
       </button>
     );

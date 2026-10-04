@@ -3,7 +3,7 @@ import { api, money, nights, prettyDate, titleCase } from './api.js';
 import Scene, { stayTheme, themeFor } from './Scene.jsx';
 import StayMap, { hasPoint } from './StayMap.jsx';
 import RoomPicker from './RoomPicker.jsx';
-import RoomTour from './RoomTour.jsx';
+import RoomTour, { hasMedia, tourLabel, withTypeMedia } from './RoomTour.jsx';
 import StayBar from './StayBar.jsx';
 
 export default function Property({ id, stay, setStay, favorites, onFavorite, navigate, tenant = false }) {
@@ -144,14 +144,15 @@ function RoomTypeCard({ hotel, roomType, stay, guests, onTour, onReserve }) {
   const quote = quotes[planId];
   const room = rooms?.find((r) => r.roomId === roomId);
   const soldOut = rooms && !mapError && free.length === 0;
-  const media = rooms?.find((r) => r.panoramaUrl || r.model3dUrl || r.tourVideoUrl);
+  const preview = withTypeMedia(room || { themeHint: roomType.description }, rooms || []);
+  const tourOf = (r) => onTour(withTypeMedia(r, rooms || []));
 
   return (
     <article className={`room-card ${open ? 'open' : ''}`}>
       <div className="room-top">
-        <button className="room-art" onClick={() => onTour(room || media || { view: roomType.description })} aria-label={`Tour the ${roomType.name}`}>
+        <button className="room-art" onClick={() => onTour(preview)} aria-label={`${tourLabel(preview)} of the ${roomType.name}`}>
           <Scene seed={roomType.roomTypeId} theme={themeFor(`${roomType.description} ${hotel.city}`)} />
-          <span className="tour-badge">◉ 3D tour</span>
+          <span className={`tour-badge ${hasMedia(preview) ? 'real' : ''}`}>◉ {tourLabel(preview)}</span>
         </button>
         <div className="room-info">
           <h3>{roomType.name}</h3>
@@ -195,7 +196,7 @@ function RoomTypeCard({ hotel, roomType, stay, guests, onTour, onReserve }) {
 
       {!mapError && rooms?.length > 0 && fits && (
         open ? (
-          <RoomPicker rooms={rooms} selectedId={roomId} onSelect={setRoomId} onPreview={(r) => onTour(r)} />
+          <RoomPicker rooms={rooms} selectedId={roomId} onSelect={setRoomId} onPreview={tourOf} />
         ) : (
           <button className="secondary wide" disabled={soldOut} onClick={() => setOpen(true)}>Choose your room, side & view →</button>
         )

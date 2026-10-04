@@ -16,24 +16,42 @@ const facing = (side = '') => {
   return ['north', 'south', 'east', 'west'].find((d) => s.includes(d));
 };
 
-/** Room preview: real hotel media when published, otherwise an illustrative 3D room with a time-of-day ("4D") dimension. */
+export const hasMedia = (r) => !!(r?.panoramaUrl || r?.tourVideoUrl || r?.model3dUrl);
+export const tourLabel = (r) => (r?.panoramaUrl ? '360° tour' : r?.tourVideoUrl ? 'Video tour' : r?.model3dUrl ? '3D model' : '3D preview');
+
+/** The room's own uploaded media, else the closest same-type room's media (same side and view first). */
+export function withTypeMedia(room, rooms = []) {
+  const base = room || {};
+  if (hasMedia(base)) return base;
+  const score = (r) => (r.view && r.view === base.view ? 2 : 0) + (r.side && r.side === base.side ? 1 : 0);
+  const donor = rooms.filter(hasMedia).sort((a, b) => score(b) - score(a))[0];
+  if (!donor) return base;
+  const { panoramaUrl, tourVideoUrl, model3dUrl } = donor;
+  return { ...base, panoramaUrl, tourVideoUrl, model3dUrl, mediaFromSibling: true };
+}
+
+/** Room preview: hotel-uploaded 360°/video/3D media when present, otherwise an illustrative 3D room with a time-of-day ("4D") dimension. */
 export default function RoomTour({ room, roomType, property, onClose }) {
   const modes = useMemo(() => {
     const m = [];
-    if (room?.model3dUrl) m.push(['model', '3D model']);
     if (room?.panoramaUrl) m.push(['panorama', '360° tour']);
     if (room?.tourVideoUrl) m.push(['video', 'Video tour']);
-    m.push(['illustrative', m.length ? 'Illustrative 3D' : '3D room tour']);
+    if (room?.model3dUrl) m.push(['model', '3D model']);
+    m.push(['illustrative', m.length ? '3D preview' : '3D room tour']);
     return m;
   }, [room]);
   const [mode, setMode] = useState(modes[0][0]);
   const [hour, setHour] = useState(() => clamp(new Date().getHours() + new Date().getMinutes() / 60, 6, 21));
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState(false);
+  const [fellBack, setFellBack] = useState(false);
+  // Hotel media that fails to load drops back to the illustrative room instead of a dead viewer.
+  const mediaFailed = () => { setFellBack(true); setMode('illustrative'); };
   const [spot, setSpot] = useState('entrance');
   const mount = useRef(null);
   const world = useRef(null);
-  const theme = room?.view && themeFor(room.view) !== 'city' ? themeFor(room.view) : stayTheme(property);
+  const hint = room?.view || room?.themeHint || '';
+  const theme = hint && themeFor(hint) !== 'city' ? themeFor(hint) : stayTheme(property);
   const size = /suite|presidential|villa|family/i.test(roomType?.name || '') || roomType?.maxOccupancy >= 4 ? 'large'
     : roomType?.maxOccupancy >= 3 || /deluxe|premium|executive/i.test(roomType?.name || '') ? 'medium' : 'small';
 
@@ -96,7 +114,7 @@ export default function RoomTour({ room, roomType, property, onClose }) {
             g.scene.position.sub(c);
             scene.add(g.scene);
             camera.position.set(0, Math.max(s.y, 1) * 0.7, Math.max(s.x, s.z, 1) * 1.6);
-          }, undefined, () => !dead && setError(true));
+          }, undefined, () => !dead && mediaFailed());
         } else {
           camera.position.set(0, 0, 0.01);
           controls.enableZoom = false;
@@ -106,7 +124,7 @@ export default function RoomTour({ room, roomType, property, onClose }) {
             t.mapping = THREE.EquirectangularReflectionMapping;
             t.colorSpace = THREE.SRGBColorSpace;
             scene.background = t;
-          }, undefined, () => !dead && setError(true));
+          }, undefined, () => !dead && mediaFailed());
         }
 
         resize = () => {
@@ -153,7 +171,7 @@ export default function RoomTour({ room, roomType, property, onClose }) {
           <div>
             <span className="eyebrow">{roomType?.name || 'Room'} · {property?.name}</span>
             <h3>
-              {room?.floor ? `Floor ${String(room.floor).replace(/^floor\s*/i, '')}` : 'Room preview'}
+              {room?.floor ? (/floor|block|wing|level/i.test(room.floor) ? room.floor : `Floor ${room.floor}`) : 'Room preview'}
               {room?.side ? ` · ${room.side}` : ''}
               {room?.view ? ` · ${room.view}` : ''}
             </h3>
@@ -168,11 +186,13 @@ export default function RoomTour({ room, roomType, property, onClose }) {
 
         <div className="tour-stage">
           {mode === 'video' ? (
-            <video className="tour-video" src={room.tourVideoUrl} controls playsInline autoPlay muted />
+            <video className="tour-video" src={room.tourVideoUrl} controls playsInline autoPlay muted onError={mediaFailed} />
           ) : (
             <div className="tour-canvas" ref={mount} />
           )}
-          {error && <div className="tour-error">This tour couldn't load. The property's media link may be unavailable.</div>}
+          {error && <div className="tour-error">This preview couldn't load on your device.</div>}
+          {fellBack && mode === 'illustrative' && <div className="tour-note">The hotel's tour couldn't load, so you're seeing a 3D preview.</div>}
+          {room?.mediaFromSibling && mode !== 'illustrative' && <div className="tour-note">Showing another {roomType?.name || 'room'} of the same type. Your room's layout may differ slightly.</div>}
           {mode === 'illustrative' && (
             <>
               <div className="tour-spots">
@@ -202,7 +222,7 @@ export default function RoomTour({ room, roomType, property, onClose }) {
               <small>Illustrative 3D layout for a {roomType?.name || 'room'} with a {room?.view || `${theme} view`}. Drag to look around. Furnishings may differ at the property.</small>
             </>
           ) : (
-            <small>{mode === 'video' ? 'Video tour supplied by the property.' : 'Drag to look around. Tour media supplied by the property.'}</small>
+            <small>{mode === 'video' ? 'Video tour uploaded by the hotel.' : mode === 'panorama' ? '360° photo uploaded by the hotel. Drag to look around.' : '3D model uploaded by the hotel. Drag to rotate, scroll to zoom.'}</small>
           )}
         </footer>
       </section>
