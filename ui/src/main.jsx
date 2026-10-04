@@ -6,7 +6,7 @@ import Property from './Property.jsx';
 import Trips from './Trips.jsx';
 import './style.css';
 
-const readRoute = () => window.location.hash.replace(/^#/, '') || '/';
+const readRoute = () => window.location.hash.replace(/^#/, '') || (window.location.pathname.startsWith('/stay/') ? window.location.pathname : '/');
 
 function useRoute() {
   const [route, setRoute] = useState(readRoute);
@@ -33,6 +33,7 @@ function initialStay() {
 function App() {
   const [route, navigate] = useRoute();
   const [config, setConfig] = useState({ brand: 'AviQR Stays' });
+  const [configReady, setConfigReady] = useState(false);
   const [stays, setStays] = useState([]);
   const [discover, setDiscover] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +46,7 @@ function App() {
   };
 
   useEffect(() => {
-    api.config().then(setConfig).catch(() => {});
+    api.config().then(setConfig).catch(() => {}).finally(() => setConfigReady(true));
     api.favorites().then((f) => setFavorites(Array.isArray(f) ? f : [])).catch(() => {});
     api.properties()
       .then(setStays)
@@ -77,26 +78,29 @@ function App() {
   }
 
   const openStay = (p) => navigate(`/stay/${p.id}`);
-  const stayId = route.match(/^\/stay\/([0-9a-f-]{36})/i)?.[1];
+  const routeStayKey = route.match(/^\/stay\/([^/]+)/i)?.[1];
+  const stayId = routeStayKey && /^[0-9a-f-]{36}$/i.test(routeStayKey) ? routeStayKey
+    : config.mode === 'TENANT' ? config.propertyId : null;
+  const tenantStorefront = config.mode === 'TENANT';
 
   return (
     <>
       <header className="topbar">
-        <a className="brand" href="#/">
+        <a className="brand" href={tenantStorefront ? `#/stay/${config.propertyId}` : '#/'}>
           {config.logo ? <img src={config.logo} alt="" /> : <span className="brandmark">{(config.brand || 'A')[0]}</span>}
           <span>{config.brand || 'AviQR Stays'}</span>
         </a>
         <nav>
-          <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>
+          {!tenantStorefront && <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>}
           <a href="#/trips" className={route === '/trips' ? 'on' : ''}>My trips</a>
-          <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
+          {!tenantStorefront && <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
             Saved{favorites.length ? <b>{favorites.length}</b> : null}
-          </a>
+          </a>}
         </nav>
       </header>
       <main>
-        {stayId ? (
-          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} />
+        {!configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId ? (
+          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} tenant={tenantStorefront} />
         ) : route === '/trips' ? (
           <Trips stays={stays} navigate={navigate} />
         ) : (

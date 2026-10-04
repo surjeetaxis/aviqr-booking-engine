@@ -6,7 +6,7 @@ import RoomPicker from './RoomPicker.jsx';
 import RoomTour from './RoomTour.jsx';
 import StayBar from './StayBar.jsx';
 
-export default function Property({ id, stay, setStay, favorites, onFavorite, navigate }) {
+export default function Property({ id, stay, setStay, favorites, onFavorite, navigate, tenant = false }) {
   const [property, setProperty] = useState(null);
   const [roomTypes, setRoomTypes] = useState(null);
   const [error, setError] = useState('');
@@ -43,7 +43,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
         <Scene seed={property.id} theme={theme} className="p-hero-art" label={`${property.city} illustration`} />
         <div className="p-hero-shade" />
         <div className="p-hero-body">
-          <button className="crumb" onClick={() => navigate('/')}>← All stays</button>
+          {!tenant && <button className="crumb" onClick={() => navigate('/')}>← All stays</button>}
           <span className="eyebrow light">{property.city || 'AVIQR COLLECTION'}</span>
           <h1>{property.name}</h1>
           <p>{[property.address, property.city].filter(Boolean).join(', ')}</p>

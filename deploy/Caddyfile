@@ -1,4 +1,18 @@
+{
+  on_demand_tls {
+    ask http://booking-api:8080/api/v1/ota/domains/authorize
+  }
+}
+
 {$DOMAIN} {
+  encode zstd gzip
+  reverse_proxy booking-ui:80
+}
+
+https:// {
+  tls {
+    on_demand
+  }
   encode zstd gzip
   reverse_proxy booking-ui:80
 }

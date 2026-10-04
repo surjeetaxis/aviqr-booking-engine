@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @RestController
 @RequestMapping("/api/v1/ota")
@@ -40,13 +42,33 @@ public class PublicBookingController {
     }
 
     @GetMapping("/config") public Map<String,Object> config() {
-        return Map.of("brand", brand.name(), "primary", brand.primary(), "accent", brand.accent(),
-            "logo", brand.logo(), "supportEmail", brand.supportEmail(), "propertyIds", brand.propertyIds());
+        Map<String,Object> resolved=currentStorefront();
+        if ("PUBLIC".equals(resolved.get("mode"))) {
+            if (brand.name()!=null&&!brand.name().isBlank()) resolved.put("brand",brand.name());
+            if (brand.primary()!=null&&!brand.primary().isBlank()) resolved.put("primary",brand.primary());
+            if (brand.accent()!=null&&!brand.accent().isBlank()) resolved.put("accent",brand.accent());
+            if (brand.logo()!=null&&!brand.logo().isBlank()) resolved.put("logo",brand.logo());
+            if (brand.supportEmail()!=null&&!brand.supportEmail().isBlank()) resolved.put("supportEmail",brand.supportEmail());
+            if (brand.propertyIds()!=null&&!brand.propertyIds().isBlank()) resolved.put("propertyIds",brand.propertyIds());
+        }
+        resolved.putIfAbsent("brand","AviQR Stays"); resolved.putIfAbsent("primary","#1f7257");
+        resolved.putIfAbsent("accent","#d5a86b"); resolved.putIfAbsent("logo",""); resolved.putIfAbsent("supportEmail","");
+        return resolved;
+    }
+    @GetMapping("/domains/authorize") public ResponseEntity<Void> authorizeCustomDomain(@RequestParam String domain) {
+        get("/api/v1/hotels/public/booking-engine/domain-authorized?domain={domain}",domain);
+        return ResponseEntity.noContent().build();
     }
     @GetMapping("/properties") public Object properties(@RequestParam(defaultValue="") String q,
             @RequestParam(defaultValue="") String city, @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="24") int size) {
-        var allowed=allowedPropertyIds();
+        Map<String,Object> storefront=currentStorefront();
+        UUID tenantId=storefrontPropertyId(storefront);
+        if (tenantId!=null) {
+            Object property=fetchProperty(tenantId);
+            return matches(property,q,city)?List.of(property):List.of();
+        }
+        var allowed=environmentPropertyIds();
         if (!allowed.isEmpty()) {
             return allowed.stream().map(this::fetchProperty).filter(x -> matches(x,q,city))
                 .limit(Math.min(100,Math.max(1,size))).toList();
@@ -54,7 +76,7 @@ public class PublicBookingController {
         return get("/api/v1/hotels/public/booking-search?q={q}&city={city}&page={page}&size={size}", q, city, Math.max(0,page), Math.min(100,Math.max(1,size)));
     }
     @GetMapping("/properties/{hotelId}") public Object property(@PathVariable UUID hotelId) {
-        requireAllowed(hotelId); return get("/api/v1/hotels/public/booking-search/{id}", hotelId);
+        requireAllowed(hotelId); return fetchProperty(hotelId);
     }
     /** Famous stays rank by recent confirmed bookings, saves and views; "for you" favours cities this visitor explored. */
     @GetMapping("/discover") public Map<String,Object> discover(@RequestParam UUID visitorId) {
@@ -105,25 +127,25 @@ public class PublicBookingController {
         return bookingOrders.findTop20ByVisitorIdAndStatusOrderByCreatedAtDesc(visitorId,"CONFIRMED").stream().map(this::confirmationData).toList();
     }
     @GetMapping("/properties/{hotelId}/room-types") public Object roomTypes(@PathVariable UUID hotelId) {
-        requireAllowed(hotelId); return get("/api/v1/pms/public/booking-engine/{id}/room-types", hotelId);
+        requireAllowed(hotelId); return get("/api/v1/pms/public/booking-engine/{id}/room-types?storefrontHost={host}&storefrontSlug={slug}", hotelId,requestHost(),requestSlug());
     }
     @GetMapping("/properties/{hotelId}/availability") public Object availability(@PathVariable UUID hotelId,
             @RequestParam UUID roomTypeId, @RequestParam @FutureOrPresent LocalDate checkIn,
             @RequestParam @Future LocalDate checkOut) {
         requireAllowed(hotelId);
-        return get("/api/v1/pms/public/booking-engine/{id}/availability?roomTypeId={room}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, checkIn, checkOut);
+        return get("/api/v1/pms/public/booking-engine/{id}/availability?roomTypeId={room}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}", hotelId, roomTypeId, checkIn, checkOut,requestHost(),requestSlug());
     }
     @GetMapping("/properties/{hotelId}/room-map") public Object availableRooms(@PathVariable UUID hotelId,
             @RequestParam UUID roomTypeId, @RequestParam @FutureOrPresent LocalDate checkIn,
             @RequestParam @Future LocalDate checkOut) {
         requireAllowed(hotelId);
-        return get("/api/v1/pms/public/booking-engine/{id}/room-map?roomTypeId={room}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, checkIn, checkOut);
+        return get("/api/v1/pms/public/booking-engine/{id}/room-map?roomTypeId={room}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}", hotelId, roomTypeId, checkIn, checkOut,requestHost(),requestSlug());
     }
     @GetMapping("/properties/{hotelId}/quote") public Object quote(@PathVariable UUID hotelId,
             @RequestParam UUID roomTypeId, @RequestParam UUID ratePlanId,
             @RequestParam @FutureOrPresent LocalDate checkIn, @RequestParam @Future LocalDate checkOut) {
         requireAllowed(hotelId);
-        return get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}", hotelId, roomTypeId, ratePlanId, checkIn, checkOut);
+        return get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}", hotelId, roomTypeId, ratePlanId, checkIn, checkOut,requestHost(),requestSlug());
     }
 
     @GetMapping("/favorites") public List<UUID> favoriteProperties(@RequestParam UUID visitorId) {
@@ -160,13 +182,13 @@ public class PublicBookingController {
             }
         }
         try {
-            Object price=get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}",
-                hotelId,request.roomTypeId(),request.ratePlanId(),request.checkInDate(),request.checkOutDate());
+            Object price=get("/api/v1/pms/public/booking-engine/{id}/quote?roomTypeId={room}&ratePlanId={plan}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,request.roomTypeId(),request.ratePlanId(),request.checkInDate(),request.checkOutDate(),requestHost(),requestSlug());
             JsonNode quote=mapper.valueToTree(price).path("data");
             BigDecimal total=quote.path("totalBeforeTax").isNumber()?quote.path("totalBeforeTax").decimalValue():null;
             String currency=quote.path("currency").asText("INR");
             PmsBookingRequest pmsRequest=new PmsBookingRequest(request.guestName(),request.guestPhone(),request.checkInDate(),
-                request.checkOutDate(),request.adults(),request.children(),request.roomTypeId(),request.ratePlanId(),request.roomId(),requestId);
+                request.checkOutDate(),request.adults(),request.children(),request.roomTypeId(),request.ratePlanId(),request.roomId(),requestId,requestHost(),requestSlug());
             Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book",hotelId)
                 .contentType(MediaType.APPLICATION_JSON).body(pmsRequest).retrieve().body(Object.class);
             JsonNode reservation=mapper.valueToTree(result).path("data");
@@ -212,7 +234,10 @@ public class PublicBookingController {
         rows.forEach(node -> output.add(mapper.convertValue(node,Map.class)));
         return output;
     }
-    private Object fetchProperty(UUID id) { Object raw=get("/api/v1/hotels/public/booking-search/{id}",id); return raw instanceof Map<?,?> map?map.get("data"):raw; }
+    private Object fetchProperty(UUID id) {
+        Object raw=get("/api/v1/hotels/public/booking-engine/properties/{id}?host={host}&slug={slug}",id,requestHost(),requestSlug());
+        return raw instanceof Map<?,?> map?map.get("data"):raw;
+    }
     private boolean matches(Object x,String q,String city) {
         if (!(x instanceof Map<?,?> p)) return false;
         String haystack=(String.valueOf(p.get("name"))+" "+String.valueOf(p.get("city"))+" "+String.valueOf(p.get("address"))).toLowerCase();
@@ -222,7 +247,7 @@ public class PublicBookingController {
         Map<UUID,Long> out=new HashMap<>(); for (Object[] r:rows) out.put((UUID)r[0],((Number)r[1]).longValue()); return out;
     }
     private UUID asUuid(Object id) { return id instanceof UUID u?u:UUID.fromString(String.valueOf(id)); }
-    private Set<UUID> allowedPropertyIds() {
+    private Set<UUID> environmentPropertyIds() {
         if (brand.propertyIds()==null||brand.propertyIds().isBlank()) return Set.of();
         try {
             List<UUID> ids=Arrays.stream(brand.propertyIds().split(",")).map(String::trim).filter(s->!s.isEmpty())
@@ -231,14 +256,46 @@ public class PublicBookingController {
             return Collections.unmodifiableSet(new LinkedHashSet<>(ids));
         } catch(IllegalArgumentException e) { throw new IllegalStateException("PROPERTY_IDS must contain comma-separated property UUIDs",e); }
     }
-    private void requireAllowed(UUID id) { Set<UUID> allowed=allowedPropertyIds(); if(!allowed.isEmpty()&&!allowed.contains(id))throw new ResponseStatusException(HttpStatus.NOT_FOUND); }
+    private void requireAllowed(UUID id) {
+        Map<String,Object> storefront=currentStorefront();
+        UUID tenantId=storefrontPropertyId(storefront);
+        if (tenantId!=null&&!tenantId.equals(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        Set<UUID> allowed=environmentPropertyIds();
+        if(!allowed.isEmpty()&&!allowed.contains(id))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        fetchProperty(id); // AviQR confirms the property is public or the request matches its private storefront.
+    }
+    private UUID storefrontPropertyId(Map<String,Object> storefront) {
+        Object id=storefront.get("propertyId");
+        if (id==null||String.valueOf(id).isBlank()||"PUBLIC".equals(storefront.get("mode"))) return null;
+        try { return UUID.fromString(String.valueOf(id)); }
+        catch (IllegalArgumentException ignored) { throw new ResponseStatusException(HttpStatus.NOT_FOUND); }
+    }
+    private Map<String,Object> currentStorefront() {
+        Object raw=get("/api/v1/hotels/public/booking-engine/config?host={host}&slug={slug}",requestHost(),requestSlug());
+        if (raw instanceof Map<?,?> root && root.get("data") instanceof Map<?,?> data)
+            return mapper.convertValue(data,Map.class);
+        return new LinkedHashMap<>();
+    }
+    private String requestHost() {
+        ServletRequestAttributes attrs=(ServletRequestAttributes)RequestContextHolder.getRequestAttributes();
+        if (attrs==null) return "";
+        String host=attrs.getRequest().getHeader("X-Forwarded-Host");
+        if (host==null||host.isBlank()) host=attrs.getRequest().getHeader("Host");
+        return host==null?"":host.split(",")[0].trim();
+    }
+    private String requestSlug() {
+        ServletRequestAttributes attrs=(ServletRequestAttributes)RequestContextHolder.getRequestAttributes();
+        if (attrs==null) return "";
+        String slug=attrs.getRequest().getParameter("slug");
+        return slug==null?"":slug.trim();
+    }
     public record BookingRequest(@NotBlank @Size(max=120) String guestName,
         @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String guestPhone,
         @NotNull @FutureOrPresent LocalDate checkInDate,@NotNull @Future LocalDate checkOutDate,
         @NotNull @Min(1) @Max(12) Integer adults,@Min(0) @Max(12) Integer children,
         @NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId,UUID visitorId) { }
     private record PmsBookingRequest(String guestName,String guestPhone,LocalDate checkInDate,LocalDate checkOutDate,
-        Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId) { }
+        Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     @RestControllerAdvice static class Errors {
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
             return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));

@@ -1,5 +1,11 @@
 const base = '/api/v1/ota';
 const unwrap = (x) => x?.data ?? x;
+const tenantSlug = () => window.location.pathname.match(/^\/stay\/([a-z0-9-]+)/i)?.[1] || '';
+const withTenant = (path) => {
+  const slug = tenantSlug();
+  if (!slug) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}slug=${encodeURIComponent(slug)}`;
+};
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -9,7 +15,7 @@ export class ApiError extends Error {
 }
 
 async function request(path, options) {
-  const r = await fetch(`${base}${path}`, options);
+  const r = await fetch(`${base}${withTenant(path)}`, options);
   const body = r.status === 204 ? null : await r.json().catch(() => null);
   if (!r.ok) throw new ApiError(body?.message || 'Request failed', r.status);
   return unwrap(body);
