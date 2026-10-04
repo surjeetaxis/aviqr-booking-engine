@@ -36,11 +36,13 @@ public class PublicBookingController {
     private final OtaFavoriteRepository favorites;
     private final OtaPropertyViewRepository views;
     private final OtaStorefrontDesignRepository designs;
+    private final GatewayPayloadEncryption encryption;
     private final ObjectMapper mapper;
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(PublicBookingController.class);
 
     PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand, OtaBookingOrderRepository bookingOrders,
-            OtaFavoriteRepository favorites, OtaPropertyViewRepository views, OtaStorefrontDesignRepository designs, ObjectMapper mapper) {
-        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.views=views; this.designs=designs; this.mapper=mapper;
+            OtaFavoriteRepository favorites, OtaPropertyViewRepository views, OtaStorefrontDesignRepository designs, GatewayPayloadEncryption encryption, ObjectMapper mapper) {
+        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.views=views; this.designs=designs; this.encryption=encryption; this.mapper=mapper;
     }
 
     @GetMapping("/config") public Map<String,Object> config() {
@@ -246,7 +248,9 @@ public class PublicBookingController {
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),first.roomTypeId(),first.ratePlanId(),first.roomId(),
                     requestId,requestHost(),requestSlug());
             Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book",hotelId)
-                .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(Object.class);
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(encryption.seal("POST","/api/v1/pms/public/booking-engine/"+hotelId+"/book",body))
+                .retrieve().body(Object.class);
             JsonNode reservation=mapper.valueToTree(result).path("data");
             UUID pmsId=UUID.fromString(reservation.path("reservationId").asText(reservation.path("id").asText()));
             JsonNode totals=reservation.path("totals");
@@ -259,6 +263,8 @@ public class PublicBookingController {
             return ResponseEntity.ok(confirmation(order));
         } catch (RestClientResponseException e) {
             order.fail(); bookingOrders.save(order);
+            log.warn("PMS rejected booking {} for hotel {}: HTTP {} {}",requestId,hotelId,e.getStatusCode().value(),
+                e.getResponseBodyAsString().substring(0,Math.min(300,e.getResponseBodyAsString().length())));
             JsonNode upstream=readJson(e.getResponseBodyAsString());
             String message=e.getStatusCode().value()==400&&upstream.path("message").isTextual()
                 ? upstream.path("message").asText() : "The hotel could not confirm this booking";
