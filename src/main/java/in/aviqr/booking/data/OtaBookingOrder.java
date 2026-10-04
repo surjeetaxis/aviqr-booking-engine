@@ -11,6 +11,7 @@ import java.util.UUID;
 public class OtaBookingOrder {
     @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id;
     @Column(name="request_id", nullable=false, length=36) private String requestId;
+    @Column(name="visitor_id") private UUID visitorId;
     @Column(name="pms_reservation_id", unique=true) private UUID pmsReservationId;
     @Column(name="property_id", nullable=false) private UUID propertyId;
     @Column(name="room_type_id", nullable=false) private UUID roomTypeId;
@@ -26,9 +27,9 @@ public class OtaBookingOrder {
     @Column(name="updated_at", nullable=false) private Instant updatedAt;
 
     protected OtaBookingOrder() { }
-    public OtaBookingOrder(UUID requestId, UUID propertyId, UUID roomTypeId, UUID roomId,
+    public OtaBookingOrder(UUID requestId, UUID visitorId, UUID propertyId, UUID roomTypeId, UUID roomId,
                            LocalDate checkIn, LocalDate checkOut, Integer adults, Integer children) {
-        this.requestId=requestId.toString(); this.propertyId=propertyId; this.roomTypeId=roomTypeId; this.roomId=roomId;
+        this.requestId=requestId.toString(); this.visitorId=visitorId; this.propertyId=propertyId; this.roomTypeId=roomTypeId; this.roomId=roomId;
         this.checkIn=checkIn; this.checkOut=checkOut; this.adults=adults; this.children=children;
         this.status="PROCESSING"; this.createdAt=Instant.now(); this.updatedAt=this.createdAt;
     }
@@ -43,5 +44,6 @@ public class OtaBookingOrder {
     public LocalDate getCheckIn(){return checkIn;} public LocalDate getCheckOut(){return checkOut;}
     public Integer getAdults(){return adults;} public Integer getChildren(){return children;}
     public BigDecimal getTotalBeforeTax(){return totalBeforeTax;} public String getCurrency(){return currency;}
-    public String getStatus(){return status;}
+    public String getStatus(){return status;} public UUID getVisitorId(){return visitorId;}
+    public Instant getCreatedAt(){return createdAt;}
 }

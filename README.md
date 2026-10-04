@@ -82,3 +82,4 @@ A hotel owner can set a room's map coordinates, side, view, and HTTPS media URLs
 ```
 
 PMS returns room IDs and these presentation fields only for the date-selected room map; it omits room numbers and guest occupancy. On reservation it checks that the selected physical room is still available and creates the PMS reservation idempotently. Deploy the AviQR hotel-service and PMS changes, including the SQL in `aviqr-backend/deploy/db-migrations/`, before enabling room selection in this storefront.
+# aviqr-booking-engine

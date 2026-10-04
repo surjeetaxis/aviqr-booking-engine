@@ -6,10 +6,13 @@ import in.aviqr.booking.data.OtaBookingOrder;
 import in.aviqr.booking.data.OtaBookingOrderRepository;
 import in.aviqr.booking.data.OtaFavorite;
 import in.aviqr.booking.data.OtaFavoriteRepository;
+import in.aviqr.booking.data.OtaPropertyView;
+import in.aviqr.booking.data.OtaPropertyViewRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -28,11 +31,12 @@ public class PublicBookingController {
     private final BookingEngineApplication.Brand brand;
     private final OtaBookingOrderRepository bookingOrders;
     private final OtaFavoriteRepository favorites;
+    private final OtaPropertyViewRepository views;
     private final ObjectMapper mapper;
 
-    PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand,
-            OtaBookingOrderRepository bookingOrders, OtaFavoriteRepository favorites, ObjectMapper mapper) {
-        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.mapper=mapper;
+    PublicBookingController(RestClient aviQr, BookingEngineApplication.Brand brand, OtaBookingOrderRepository bookingOrders,
+            OtaFavoriteRepository favorites, OtaPropertyViewRepository views, ObjectMapper mapper) {
+        this.aviQr=aviQr; this.brand=brand; this.bookingOrders=bookingOrders; this.favorites=favorites; this.views=views; this.mapper=mapper;
     }
 
     @GetMapping("/config") public Map<String,Object> config() {
@@ -52,17 +56,53 @@ public class PublicBookingController {
     @GetMapping("/properties/{hotelId}") public Object property(@PathVariable UUID hotelId) {
         requireAllowed(hotelId); return get("/api/v1/hotels/public/booking-search/{id}", hotelId);
     }
-    @GetMapping("/recommendations") public Object recommendations(@RequestParam(defaultValue="") String city,
-            @RequestParam UUID visitorId) {
-        Object raw=properties("",city,0,100);
-        List<Map<String,Object>> rows=propertyRows(raw);
-        Set<UUID> saved=favorites.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream()
-            .map(OtaFavorite::getPropertyId).collect(Collectors.toSet());
-        rows.sort(Comparator.<Map<String,Object>>comparingLong(p -> bookingOrders.countByPropertyIdAndStatus(asUuid(p.get("id")),"CONFIRMED"))
-            .reversed().thenComparing(p -> saved.contains(asUuid(p.get("id"))) ? 0 : 1));
-        for (var row:rows) row.put("recommendationReason", bookingOrders.countByPropertyIdAndStatus(asUuid(row.get("id")),"CONFIRMED")>0
-            ? "Popular with AviQR guests" : "Recommended from the AviQR collection");
-        return rows;
+    /** Famous stays rank by recent confirmed bookings, saves and views; "for you" favours cities this visitor explored. */
+    @GetMapping("/discover") public Map<String,Object> discover(@RequestParam UUID visitorId) {
+        List<Map<String,Object>> rows=propertyRows(properties("","",0,100));
+        LocalDate since=LocalDate.now(ZoneOffset.UTC).minusDays(30);
+        Map<UUID,Long> booked=counts(bookingOrders.countConfirmedByPropertySince(since.atStartOfDay(ZoneOffset.UTC).toInstant()));
+        Map<UUID,Long> viewed=counts(views.countByPropertySince(since)), saved=counts(favorites.countByProperty());
+        Set<UUID> mine=favorites.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream().map(OtaFavorite::getPropertyId).collect(Collectors.toSet());
+        List<UUID> seen=views.findTop50ByVisitorIdOrderByCreatedAtDesc(visitorId).stream().map(OtaPropertyView::getPropertyId).distinct().toList();
+        Map<UUID,Map<String,Object>> byId=new LinkedHashMap<>();
+        Map<String,Long> affinity=new HashMap<>();
+        for (var row:rows) {
+            UUID id=asUuid(row.get("id")); byId.put(id,row);
+            long b=booked.getOrDefault(id,0L);
+            row.put("recentBookings",b); row.put("popularity",5*b+3*saved.getOrDefault(id,0L)+viewed.getOrDefault(id,0L));
+            String city=String.valueOf(row.getOrDefault("city",""));
+            if (!city.isBlank()) affinity.merge(city,(mine.contains(id)?2L:0L)+(seen.contains(id)?1L:0L),Long::sum);
+        }
+        Comparator<Map<String,Object>> popular=Comparator.<Map<String,Object>>comparingLong(r -> (Long)r.get("popularity")).reversed()
+            .thenComparing(r -> -((Number)r.getOrDefault("totalRooms",0)).intValue());
+        List<Map<String,Object>> famous=rows.stream().sorted(popular).limit(6).map(r -> {
+            var x=new LinkedHashMap<>(r); long b=(Long)r.get("recentBookings");
+            x.put("recommendationReason", b>0 ? b+(b==1?" stay":" stays")+" booked this month"
+                : (Long)r.get("popularity")>0 ? "Trending with travellers" : "An AviQR signature stay");
+            return (Map<String,Object>)x; }).toList();
+        List<Map<String,Object>> forYou=rows.stream().sorted(Comparator.<Map<String,Object>>comparingLong(
+                r -> affinity.getOrDefault(String.valueOf(r.getOrDefault("city","")),0L)).reversed().thenComparing(popular))
+            .limit(6).map(r -> {
+                var x=new LinkedHashMap<>(r); String city=String.valueOf(r.getOrDefault("city",""));
+                x.put("recommendationReason", mine.contains(asUuid(r.get("id"))) ? "On your shortlist"
+                    : affinity.getOrDefault(city,0L)>0 ? "Because you explored "+city : "Handpicked for your next trip");
+                return (Map<String,Object>)x; }).toList();
+        List<Map<String,Object>> recent=seen.stream().map(byId::get).filter(Objects::nonNull).limit(6).toList();
+        List<Map<String,Object>> destinations=rows.stream().map(r -> String.valueOf(r.getOrDefault("city","")))
+            .filter(c -> !c.isBlank() && !"null".equals(c)).collect(Collectors.groupingBy(c -> c,LinkedHashMap::new,Collectors.counting()))
+            .entrySet().stream().sorted(Map.Entry.<String,Long>comparingByValue().reversed())
+            .map(e -> Map.<String,Object>of("city",e.getKey(),"stays",e.getValue())).toList();
+        return Map.of("famous",famous,"forYou",forYou,"recentlyViewed",recent,"destinations",destinations);
+    }
+    @PostMapping("/properties/{hotelId}/views") public ResponseEntity<Void> recordView(@PathVariable UUID hotelId,@RequestParam UUID visitorId) {
+        requireAllowed(hotelId); LocalDate day=LocalDate.now(ZoneOffset.UTC);
+        if (!views.existsByVisitorIdAndPropertyIdAndViewDate(visitorId,hotelId,day)) {
+            try { views.save(new OtaPropertyView(visitorId,hotelId,day)); } catch (DataIntegrityViolationException alreadyRecorded) { }
+        }
+        return ResponseEntity.noContent().build();
+    }
+    @GetMapping("/trips") public List<Map<String,Object>> trips(@RequestParam UUID visitorId) {
+        return bookingOrders.findTop20ByVisitorIdAndStatusOrderByCreatedAtDesc(visitorId,"CONFIRMED").stream().map(this::confirmationData).toList();
     }
     @GetMapping("/properties/{hotelId}/room-types") public Object roomTypes(@PathVariable UUID hotelId) {
         requireAllowed(hotelId); return get("/api/v1/pms/public/booking-engine/{id}/room-types", hotelId);
@@ -111,7 +151,7 @@ public class PublicBookingController {
                 || !order.getChildren().equals(request.children())))
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","Idempotency key was already used for a different booking"));
         if (order==null) {
-            order=new OtaBookingOrder(requestId,hotelId,request.roomTypeId(),request.roomId(),request.checkInDate(),request.checkOutDate(),request.adults(),request.children());
+            order=new OtaBookingOrder(requestId,request.visitorId(),hotelId,request.roomTypeId(),request.roomId(),request.checkInDate(),request.checkOutDate(),request.adults(),request.children());
             try { order=bookingOrders.saveAndFlush(order); }
             catch (DataIntegrityViolationException duplicate) {
                 order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
@@ -149,12 +189,15 @@ public class PublicBookingController {
     }
 
     private Object confirmation(OtaBookingOrder o) {
+        return Map.of("success",true,"message","Booking status","data",confirmationData(o));
+    }
+    private Map<String,Object> confirmationData(OtaBookingOrder o) {
         Map<String,Object> data=new LinkedHashMap<>(); data.put("bookingId",o.getId());
         data.put("reservationId",o.getPmsReservationId()); data.put("status",o.getStatus()); data.put("hotelId",o.getPropertyId());
         data.put("roomTypeId",o.getRoomTypeId()); data.put("roomId",o.getRoomId()); data.put("checkIn",o.getCheckIn());
         data.put("checkOut",o.getCheckOut()); data.put("adults",o.getAdults()); data.put("children",o.getChildren());
-        data.put("totalBeforeTax",o.getTotalBeforeTax()); data.put("currency",o.getCurrency());
-        return Map.of("success",true,"message","Booking status","data",data);
+        data.put("totalBeforeTax",o.getTotalBeforeTax()); data.put("currency",o.getCurrency()); data.put("createdAt",o.getCreatedAt());
+        return data;
     }
     private Object get(String path,Object... vars) {
         try { return aviQr.get().uri(path,vars).retrieve().body(Object.class); }
@@ -175,6 +218,9 @@ public class PublicBookingController {
         String haystack=(String.valueOf(p.get("name"))+" "+String.valueOf(p.get("city"))+" "+String.valueOf(p.get("address"))).toLowerCase();
         return (q==null||q.isBlank()||haystack.contains(q.toLowerCase()))&&(city==null||city.isBlank()||String.valueOf(p.get("city")).equalsIgnoreCase(city));
     }
+    private Map<UUID,Long> counts(List<Object[]> rows) {
+        Map<UUID,Long> out=new HashMap<>(); for (Object[] r:rows) out.put((UUID)r[0],((Number)r[1]).longValue()); return out;
+    }
     private UUID asUuid(Object id) { return id instanceof UUID u?u:UUID.fromString(String.valueOf(id)); }
     private Set<UUID> allowedPropertyIds() {
         if (brand.propertyIds()==null||brand.propertyIds().isBlank()) return Set.of();
@@ -190,7 +236,7 @@ public class PublicBookingController {
         @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String guestPhone,
         @NotNull @FutureOrPresent LocalDate checkInDate,@NotNull @Future LocalDate checkOutDate,
         @NotNull @Min(1) @Max(12) Integer adults,@Min(0) @Max(12) Integer children,
-        @NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId) { }
+        @NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId,UUID visitorId) { }
     private record PmsBookingRequest(String guestName,String guestPhone,LocalDate checkInDate,LocalDate checkOutDate,
         Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId) { }
     @RestControllerAdvice static class Errors {
