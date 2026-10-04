@@ -4,21 +4,23 @@ A standalone, white-label OTA and hotel booking storefront. The app has its own 
 
 ## Guest flow
 
-PostgreSQL stores OTA booking references/idempotency state and anonymous browser favorites; AviQR PMS remains the source of truth for physical inventory, rate plans, and reservations. Guest name/phone are forwarded to PMS and are not duplicated in the OTA database. Each browser gets a random visitor ID for saved stays and recommendations.
+- **Home:** popular destinations, **Famous stays** (ranked by confirmed bookings, saves and views in the last 30 days), **Recommended stays** (weighted towards cities the visitor explored or saved), recently viewed stays, an OpenStreetMap view of every property, and the full collection with filter and sort.
+- **Property page:** amenities, check-in/out times, live room types and rate plans with date-specific PMS quotes, a location map, and the room picker.
+- **Room picker:** the PMS room map shows each unit as available or booked by floor, without room numbers or guest data. Guests filter by side/wing and view, and pick an exact available room. Hotels set `mapX`/`mapY` to draw a real floor plan; otherwise rooms are laid out along a corridor grouped by side.
+- **Room tour:** hotel-provided 360° panoramas, GLB/GLTF models and videos are shown when present. Every room also gets an illustrative three.js room sized by room type, with the window and view taken from the room's side/view, and a time-of-day ("4D") control that changes daylight, the view outside and room lighting. It is labelled illustrative.
+- **Checkout and trips:** guest name and phone go to PMS, which creates a `DIRECT` reservation idempotently. Payment is taken at the property. **My trips** lists confirmed bookings made from that browser.
 
-Guests search the active AviQR property directory by property, city, and travel dates; open property details; compare active room types and rate plans; see live room availability and date-specific PMS price quotes; and submit a direct booking. Availability and quote values are refreshed for the selected dates. The PMS is authoritative and can reject a stale or invalid selection during booking.
+PostgreSQL stores booking references/idempotency state, anonymous favorites, per-visitor daily property views, and the visitor ID on bookings. Guest name/phone are not stored here. Each browser gets a random visitor ID. AviQR PMS remains the source of truth for inventory, rates and reservations.
 
-The room experience includes a PMS-backed floor map that labels units available or booked/unavailable without revealing room numbers or guest occupancy. Guests can select an exact available room and see its side and view when the hotel configures map positions. The tour viewer supports hotel-provided 360° equirectangular panoramas, interactive GLB/GLTF models, and video tours. It needs real media assets supplied by each property; a normal video is not a volumetric “4D” experience.
-
-The current PMS public booking request requires guest name and phone. Payment collection, guest email persistence/confirmation, multi-room checkout, customer accounts, booking changes/cancellation, reviews, loyalty, and third-party channel-manager inventory are not implemented by the current source PMS API. Add each capability through an explicit client/provider requirement and PMS API contract. This release does not collect card data.
+Not implemented: online payment, guest email confirmation, multi-room checkout, accounts, booking changes/cancellation and reviews.
 
 ## Local development
 
-Requirements: Java 21, Node 22, Gradle 8, and PostgreSQL 15+ (or Docker).
+Requirements: Java 21, Node 22, and PostgreSQL 15+ (or Docker). Use the committed Gradle wrapper (`./gradlew`).
 
 ```sh
 # API
-AVIQR_CORE_API=https://api.aviqr.com gradle bootRun
+AVIQR_CORE_API=https://api.aviqr.com ./gradlew bootRun
 
 # UI in another terminal; Vite proxies API requests to the backend
 cd ui
@@ -26,7 +28,7 @@ npm install
 npm run dev -- --host 0.0.0.0
 ```
 
-Start local PostgreSQL (or `docker compose up -d postgres`) before `gradle bootRun`; configure `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` as needed. Flyway applies the OTA schema at startup. For the Vite development proxy, set `VITE_OTA_API_TARGET=http://localhost:8080` in `ui/.env.local` (the production UI uses Nginx to proxy `/api` to the backend). The UI obtains its colors, title, logo, support contact, and optional property allowlist from `/api/v1/ota/config`.
+Start local PostgreSQL (or `docker compose up -d postgres`) before `./gradlew bootRun`; configure `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` as needed. Flyway applies the OTA schema at startup. For the Vite development proxy, set `VITE_OTA_API_TARGET=http://localhost:8080` in `ui/.env.local` (the production UI uses Nginx to proxy `/api` to the backend). The UI obtains its colors, title, logo, support contact, and optional property allowlist from `/api/v1/ota/config`.
 
 ## Separate branded customer deployment
 

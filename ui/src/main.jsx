@@ -1,41 +1,117 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';
-import{createRoot}from'react-dom/client';
-import'./style.css';
-const api='/api/v1/ota';
-const unwrap=x=>x?.data??x;
-const today=new Date();
-const datePlus=n=>{const d=new Date();d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-function visitorKey(){let id=localStorage.getItem('aviqr-visitor-id');if(!id){id=crypto.randomUUID();localStorage.setItem('aviqr-visitor-id',id)}return id}
-function App(){
- const[config,setConfig]=useState({brand:'AviQR Stays',primary:'#1f7257',accent:'#d5a86b'}),[visitorId]=useState(visitorKey),[properties,setProperties]=useState([]),[recommendations,setRecommendations]=useState([]),[favorites,setFavorites]=useState([]),[query,setQuery]=useState(''),[city,setCity]=useState(''),[loading,setLoading]=useState(true),[selected,setSelected]=useState(null),[rooms,setRooms]=useState([]),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[sort,setSort]=useState('recommended'),[tour,setTour]=useState(null),[booking,setBooking]=useState(null);
- const[stay,setStay]=useState({checkIn:datePlus(1),checkOut:datePlus(2),adults:2,children:0});
- useEffect(()=>{fetch(`${api}/config`).then(r=>r.json()).then(setConfig).catch(()=>{});fetch(`${api}/favorites?visitorId=${visitorId}`).then(r=>r.ok?r.json():[]).then(x=>setFavorites(Array.isArray(x)?x:[])).catch(()=>{});},[]);
- useEffect(()=>{document.documentElement.style.setProperty('--brand',config.primary||'#1f7257');document.documentElement.style.setProperty('--accent',config.accent||'#d5a86b');document.title=`${config.brand||'AviQR Stays'} · stays made personal`;},[config]);
- async function search(e){e?.preventDefault();setLoading(true);setNotice('');try{let all=[];for(let page=0;page<25;page++){const p=new URLSearchParams({q:query,city,page,size:100});const r=await fetch(`${api}/properties?${p}`);if(!r.ok)throw Error();const j=await r.json(),data=j?.data,rows=Array.isArray(j)?j:(Array.isArray(data)?data:(data?.content||[]));all.push(...rows);if(!data?.totalPages||page+1>=data.totalPages||!rows.length)break;}const allow=(config.propertyIds||'').split(',').map(x=>x.trim()).filter(Boolean);setProperties(allow.length?all.filter(x=>allow.includes(x.id)):all);fetch(`${api}/recommendations?visitorId=${visitorId}&city=${encodeURIComponent(city)}`).then(r=>r.ok?r.json():[]).then(x=>setRecommendations(Array.isArray(x)?x:unwrap(x)||[])).catch(()=>setRecommendations([]));}catch{setNotice('The AviQR property catalog is temporarily unavailable. Please try again shortly.');setProperties([]);setRecommendations([]);}finally{setLoading(false);}}
- useEffect(()=>{search()},[config.propertyIds]);
- const shown=useMemo(()=>{const list=[...properties];if(sort==='city')return list.sort((a,b)=>(a.city||'').localeCompare(b.city||''));if(sort==='rooms')return list.sort((a,b)=>(b.totalRooms||0)-(a.totalRooms||0));return list;},[properties,sort]);
- async function toggleFavorite(h,e){e?.stopPropagation();const saved=favorites.includes(h.id),method=saved?'DELETE':'PUT';try{const r=await fetch(`${api}/favorites/${h.id}?visitorId=${visitorId}`,{method});if(!r.ok)throw Error();setFavorites(saved?favorites.filter(x=>x!==h.id):[h.id,...favorites]);}catch{setNotice('Could not save this stay right now.');}}
- async function openProperty(h){setSelected(h);setRooms([]);setNotice('');try{const r=await fetch(`${api}/properties/${h.id}/room-types`);if(!r.ok)throw Error();const data=unwrap(await r.json());setRooms(Array.isArray(data)?data:[]);}catch{setNotice('Room options are temporarily unavailable.');}}
- async function book(room,plan,selectedRoom,form,key){setBusy(true);setNotice('');try{const r=await fetch(`${api}/properties/${selected.id}/book`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify({...form,checkInDate:stay.checkIn,checkOutDate:stay.checkOut,adults:Number(stay.adults),children:Number(stay.children),roomTypeId:room.roomTypeId,ratePlanId:plan.ratePlanId,roomId:selectedRoom.roomId})});const j=await r.json();if(!r.ok)throw Error(j.message||'The property could not confirm this booking.');const data=unwrap(j);setBooking(data);setNotice('');}catch(e){setNotice(e.message||'Booking could not be completed. Please try again.');}finally{setBusy(false);}}
- const featured=recommendations.length?recommendations.slice(0,3):properties.slice(0,3);const savedProperties=properties.filter(p=>favorites.includes(p.id));
- return <><header className="topbar"><a className="brand" href="#top">{config.logo?<img src={config.logo} alt=""/>:<span className="brandmark">a</span>}<span>{config.brand||'AviQR Stays'}<small>STAYS, MADE PERSONAL</small></span></a><nav><a href="#stays">Discover</a><a href="#experience">Room experience</a><a href="#saved">Saved <b>{favorites.length||''}</b></a></nav><button className="nav-cta" onClick={()=>document.getElementById('search-form')?.scrollIntoView({behavior:'smooth'})}>Find a stay <span>↗</span></button></header>
- <main id="top"><section className="hero"><div className="hero-text"><span className="eyebrow"><i/> A NEW WAY TO STAY</span><h1>Go somewhere.<br/><em>Feel at home.</em></h1><p>Find a stay that fits your plans, your pace, and the little things you love.</p><div className="hero-points"><span><b>✳</b> Handpicked stays</span><span><b>↗</b> Direct PMS booking</span></div></div><div className="hero-picture"><div className="hero-img img-a"/><div className="hero-img img-b"/><div className="hero-stamp">STAY<br/><i>curious</i></div><div className="hero-caption"><small>THE AVIQR COLLECTION</small><b>Find your kind of place.</b></div></div><div className="hero-wash"/></section>
- <section className="search-section" id="search"><form id="search-form" className="search-panel" onSubmit={search}><label className="search-cell destination"><span>WHERE TO?</span><input value={city} onChange={e=>setCity(e.target.value)} placeholder="City, landmark or anywhere"/></label><label className="search-cell"><span>CHECK IN</span><input type="date" min={datePlus(0)} value={stay.checkIn} onChange={e=>setStay({...stay,checkIn:e.target.value})}/></label><label className="search-cell"><span>CHECK OUT</span><input type="date" min={stay.checkIn} value={stay.checkOut} onChange={e=>setStay({...stay,checkOut:e.target.value})}/></label><label className="search-cell guests"><span>TRAVELLERS</span><select value={stay.adults} onChange={e=>setStay({...stay,adults:e.target.value})}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n} guest{n>1?'s':''}</option>)}</select></label><button className="search-button"><span>⌕</span> Explore stays</button></form><div className="search-note">Live dates and room availability come from AviQR PMS</div></section>
- <section className="featured-section"><div className="section-intro"><div><span className="eyebrow">A LITTLE INSPIRATION</span><h2>Stays worth the story.</h2><p>Guest favourites and thoughtful recommendations from across AviQR.</p></div><a href="#stays">See all stays <span>↗</span></a></div><div className="featured-grid">{featured.slice(0,3).map((h,i)=><PropertyCard key={h.id} property={h} index={i} favorite={favorites.includes(h.id)} onFavorite={toggleFavorite} onOpen={openProperty} featured/>)}</div></section>
- <section className="discover-section" id="stays"><div className="section-intro"><div><span className="eyebrow">THE COLLECTION</span><h2>Find your next favourite.</h2><p>{properties.length?`${properties.length} places to begin`: 'Explore active AviQR properties'}</p></div><label className="sort">Sort by <select value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">Recommended</option><option value="city">Destination</option><option value="rooms">Most rooms</option></select></label></div><form className="inline-search" onSubmit={search}><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Property, neighbourhood or destination"/><button>Search</button></form>{notice&&!selected&&!booking&&<div className="notice">{notice}</div>}{loading?<div className="empty">Finding places for you…</div>:shown.length?<div className="property-grid">{shown.map((h,i)=><PropertyCard key={h.id} property={h} index={i} favorite={favorites.includes(h.id)} onFavorite={toggleFavorite} onOpen={openProperty}/>)}</div>:<div className="empty empty-card"><b>We’re getting the collection ready</b><p>Try another destination or check again soon.</p></div>}</section>
- <section className="saved-strip" id="saved"><div><span className="eyebrow">YOUR SHORTLIST</span><h2>Keep the places you love close.</h2><p>Your saved stays follow you on this browser.</p></div><div className="saved-count"><span>♥</span><strong>{favorites.length}</strong><small>saved stays</small></div>{savedProperties.length>0?<div className="saved-mini">{savedProperties.slice(0,3).map(p=><button key={p.id} onClick={()=>openProperty(p)}>{p.name}<span>↗</span></button>)}</div>:<small className="saved-empty">Save a stay with the ♡ button to find it here.</small>}</section>
- <section className="experience" id="experience"><div className="experience-image"><div className="experience-sun"/><div className="experience-hill"/><div className="experience-card">A room with<br/><i>a point of view</i></div><span className="experience-orbit">360°</span></div><div className="experience-copy"><span className="eyebrow">LOOK BEFORE YOU BOOK</span><h2>Choose the room.<br/><em>Choose the view.</em></h2><p>Explore the floor map, pick an available room by side and outlook, and take a virtual tour when the property has published one.</p><div className="experience-features"><span><b>01</b> Live room map</span><span><b>02</b> 360° panoramas</span><span><b>03</b> 3D models & video</span></div><small>Tour content and room-map positions are supplied by each property.</small></div></section>
- <section className="steps-section"><span className="eyebrow">A BETTER BOOKING, STEP BY STEP</span><div className="steps-grid"><div><b>01</b><strong>Discover</strong><p>Find stays and ideas that fit your destination.</p></div><div><b>02</b><strong>Choose your room</strong><p>Check real inventory, then select your preferred side and view.</p></div><div><b>03</b><strong>Book direct</strong><p>Your reservation is confirmed in the property PMS.</p></div></div></section></main>
- <footer><a className="brand" href="#top"><span className="brandmark">a</span><span>{config.brand||'AviQR Stays'}<small>STAYS, MADE PERSONAL</small></span></a><span>Made for the way you travel.</span><span>© {new Date().getFullYear()} {config.brand||'AviQR'}</span></footer>
- {selected&&<div className="overlay" onClick={()=>setSelected(null)}><div className="property-modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSelected(null)}>×</button><div className="property-modal-head"><span className="eyebrow">{selected.city||'AVIQR COLLECTION'}</span><h2>{selected.name}</h2><p>{selected.address}</p><div className="amenities">{selected.amenities?.slice(0,7).map(x=><span key={x}>{x}</span>)}</div></div><div className="modal-content"><div className="date-summary"><span>YOUR STAY</span><b>{stay.checkIn} <i>→</i> {stay.checkOut}</b><small>{stay.adults} guests · live prices from PMS</small></div><h3>Choose a room and the view you love</h3>{rooms.length?rooms.map(room=><article className="room-type" key={room.roomTypeId}><div className="room-type-head"><div><h4>{room.name}</h4><p>{room.description||`Up to ${room.maxOccupancy||2} guests`}</p></div><span>MAX {room.maxOccupancy||2}</span></div><div className="rate-grid">{room.ratePlans?.map(plan=><PlanChoice key={plan.ratePlanId} hotelId={selected.id} room={room} plan={plan} stay={stay} busy={busy} onBook={(physical,form,key)=>book(room,plan,physical,form,key)} onTour={setTour}/>)}</div></article>):<div className="empty">Loading bookable rooms…</div>}{notice&&<div className="notice">{notice}</div>}</div><div className="modal-disclaimer">Room map and tour media are provided by the property. PMS availability and rates are checked again when you book.</div></div></div>}
- {tour&&<TourModal room={tour} onClose={()=>setTour(null)}/>}
- {booking&&<div className="overlay" onClick={()=>{setBooking(null);setSelected(null)}}><div className="confirmation" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>{setBooking(null);setSelected(null)}}>×</button><div className="confirm-check">✓</div><span className="eyebrow">YOU’RE ALL SET</span><h2>Your stay is confirmed.</h2><p>The reservation has been sent to {selected?.name||'the property'}’s PMS.</p><div className="confirm-details"><span>BOOKING REFERENCE</span><b>{booking.bookingId||booking.reservationId}</b><span>YOUR ROOM</span><b>{booking.roomId?'Selected room':'Confirmed room'}</b><span>DATES</span><b>{booking.checkIn} → {booking.checkOut}</b>{booking.totalBeforeTax&&<><span>ROOM TOTAL · BEFORE TAX</span><b>{booking.currency||'INR'} {Number(booking.totalBeforeTax).toLocaleString('en-IN')}</b></>}</div><button className="search-button" onClick={()=>{setBooking(null);setSelected(null)}}>Back to exploring</button></div></div>}
- </>}
-function PropertyCard({property:h,index,favorite,onFavorite,onOpen,featured=false}){return <article className={`stay-card ${featured?'is-featured':''}`} onClick={()=>onOpen(h)}><div className={`stay-photo scene-${index%5}`}>{h.logoUrl?<img src={h.logoUrl} alt=""/>:<span className="scene-monogram">{(h.city||h.name||'A').slice(0,1).toUpperCase()}</span>}<span className="photo-kicker">{featured?(h.recommendationReason||'RECOMMENDED STAY'):'AVIQR STAY'}</span><button className={`favorite ${favorite?'active':''}`} aria-label={favorite?'Remove saved stay':'Save stay'} onClick={e=>onFavorite(h,e)}>{favorite?'♥':'♡'}</button><span className="photo-arrow">↗</span></div><div className="stay-info"><div className="stay-location"><span>⌖</span> {h.city||'India'}<i>·</i>{h.totalRooms?`${h.totalRooms} rooms`: 'AviQR collection'}</div><h3>{h.name}</h3><p>{h.address||'A welcoming place to stay'}</p><div className="stay-bottom"><span>Explore rooms <b>→</b></span>{h.recommendationReason&&<small>{h.recommendationReason}</small>}</div></div></article>}
-function PlanChoice({hotelId,room,plan,stay,busy,onBook,onTour}){const[quote,setQuote]=useState(null),[physical,setPhysical]=useState([]),[selectedRoom,setSelectedRoom]=useState(null),[contact,setContact]=useState(false),[guestName,setName]=useState(''),[guestPhone,setPhone]=useState(''),[key,setKey]=useState(()=>crypto.randomUUID()),[loading,setLoading]=useState(true);
- useEffect(()=>{let live=true;setLoading(true);setSelectedRoom(null);const base={roomTypeId:room.roomTypeId,checkIn:stay.checkIn,checkOut:stay.checkOut};const q=new URLSearchParams({...base,ratePlanId:plan.ratePlanId});const dates=new URLSearchParams(base);Promise.all([fetch(`${api}/properties/${hotelId}/quote?${q}`).then(r=>r.ok?r.json():null),fetch(`${api}/properties/${hotelId}/room-map?${dates}`).then(r=>r.ok?r.json():null)]).then(([qr,mr])=>{if(live){setQuote(qr&&unwrap(qr));const rows=mr&&unwrap(mr);setPhysical(Array.isArray(rows)?rows:[]);setLoading(false)}}).catch(()=>{if(live)setLoading(false)});return()=>{live=false}},[hotelId,room.roomTypeId,plan.ratePlanId,stay.checkIn,stay.checkOut]);
- const available=physical.filter(x=>x.availabilityStatus==='AVAILABLE');const chosen=physical.find(x=>x.roomId===selectedRoom);const points=physical.filter(x=>x.mapX!=null&&x.mapY!=null).length>0;
- function submit(e){e.preventDefault();if(!chosen)return;onBook(chosen,{guestName,guestPhone},key)}
- return <div className="rate-card"><div className="rate-top"><div><b>{plan.name}</b><small>{plan.mealPlan} · {plan.cancellationPolicy||'Cancellation policy at property'}</small></div><span className="rate-price">{quote?.totalBeforeTax!=null?`${quote.currency||'INR'} ${Number(quote.totalBeforeTax).toLocaleString('en-IN')}`:plan.baseRate?`From ${Number(plan.baseRate).toLocaleString('en-IN')} / night`:'Price on request'}<small>{quote?.nights||''} {quote?.nights?'nights · before tax':''}</small></span></div><div className="inventory-line"><span><i className="dot-green"/> {available.length} rooms available</span><span><i className="dot-muted"/> {physical.length-available.length} booked / unavailable</span><span>{loading?'Refreshing PMS…':'Live PMS inventory'}</span></div>{physical.length>0&&<><div className="room-map-label"><b>Pick your room</b><small>{points?'Tap a room on the map':'Room positions not mapped yet — choose a listed room'}</small></div><div className={`room-map ${points?'positioned':''}`}><div className="map-corridor">HALLWAY</div>{physical.map((item,i)=><button key={item.roomId} style={points?{left:`${item.mapX}%`,top:`${item.mapY}%`}:{}} className={`map-room ${item.availabilityStatus==='AVAILABLE'?'free':'blocked'} ${selectedRoom===item.roomId?'chosen':''} ${!points?'unpositioned':''}`} disabled={item.availabilityStatus!=='AVAILABLE'} onClick={()=>setSelectedRoom(item.roomId)} title={`${item.floor||'Room'} · ${item.side||item.view||''}`}><span>{item.availabilityStatus==='AVAILABLE'?'✓':'×'}</span>{!points&&<small>{item.floor||`Room ${i+1}`}</small>}</button>)}</div><div className="room-legend"><span><i className="dot-green"/>Available to select</span><span><i className="dot-muted"/>Booked or not for sale</span>{chosen&&<span className="chosen-note">Selected · {chosen.floor||'room'} {chosen.side?`· ${chosen.side}`:''} {chosen.view?`· ${chosen.view} view`:''}</span>}</div></>}{!physical.length&&!loading&&<div className="tour-empty">No room map or live room selection is available for these dates.</div>}{chosen&&(chosen.panoramaUrl||chosen.model3dUrl||chosen.tourVideoUrl)&&<button className="tour-launch" onClick={()=>onTour(chosen)}><span>◉</span> Preview your room <b>{chosen.model3dUrl?'3D model':chosen.panoramaUrl?'360° tour':'room video'}</b> <i>↗</i></button>}{chosen&&!contact?<button className="book-room" onClick={()=>setContact(true)} disabled={busy}>Book this room <span>→</span></button>:null}{chosen&&contact&&<form className="booking-form" onSubmit={submit}><input required maxLength="120" value={guestName} onChange={e=>setName(e.target.value)} placeholder="Full name"/><input required type="tel" maxLength="24" value={guestPhone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number"/><button disabled={busy}>{busy?'Sending to PMS…':'Confirm room'} <span>→</span></button></form>}</div>}
-function TourModal({room,onClose}){const mount=useRef(null),[error,setError]=useState(false);useEffect(()=>{if(room.tourVideoUrl)return;const host=mount.current;if(!host)return;let renderer,frame,controls,resize,dead=false;let scene;const begin=async()=>{try{const[THREE,{GLTFLoader},{OrbitControls}]=await Promise.all([import('three'),import('three/addons/loaders/GLTFLoader.js'),import('three/addons/controls/OrbitControls.js')]);if(dead)return;scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(72,host.clientWidth/Math.max(host.clientHeight,1),0.1,1000);camera.position.set(0,0,room.model3dUrl?4:0.01);renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.setSize(host.clientWidth,host.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);scene.add(new THREE.HemisphereLight(0xffffff,0x53604f,2));const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(3,5,4);scene.add(light);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.enablePan=!!room.model3dUrl;controls.enableZoom=!!room.model3dUrl;controls.minDistance=1.2;controls.maxDistance=8;if(room.model3dUrl){new GLTFLoader().load(room.model3dUrl,g=>{if(dead)return;scene.add(g.scene);const box=new THREE.Box3().setFromObject(g.scene),center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());g.scene.position.sub(center);camera.position.set(0,Math.max(size.y,1)*0.7,Math.max(size.x,size.z,1)*1.8);controls.target.set(0,0,0)},undefined,()=>setError(true));}else if(room.panoramaUrl){new THREE.TextureLoader().load(room.panoramaUrl,t=>{if(dead){t.dispose();return}t.mapping=THREE.EquirectangularReflectionMapping;t.colorSpace=THREE.SRGBColorSpace;scene.background=t},undefined,()=>setError(true));controls.enableZoom=false;}resize=()=>{if(!host.clientWidth||!host.clientHeight)return;camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();renderer.setSize(host.clientWidth,host.clientHeight)};window.addEventListener('resize',resize);const draw=()=>{frame=requestAnimationFrame(draw);controls.update();renderer.render(scene,camera)};draw();}catch{if(!dead)setError(true)}};begin();return()=>{dead=true;cancelAnimationFrame(frame);if(resize)window.removeEventListener('resize',resize);controls?.dispose();renderer?.dispose();if(renderer?.domElement.parentNode===host)host.removeChild(renderer.domElement);scene?.traverse(x=>{x.geometry?.dispose();if(x.material){const a=Array.isArray(x.material)?x.material:[x.material];a.forEach(m=>m.dispose())}})}},[room]);return <div className="tour-overlay" onClick={onClose}><section className="tour-dialog" onClick={e=>e.stopPropagation()}><div className="tour-head"><div><span className="eyebrow">ROOM PREVIEW</span><h3>{room.floor||'Your selected room'}{room.view?` · ${room.view} view`:''}</h3></div><button onClick={onClose}>×</button></div>{room.tourVideoUrl?<video className="tour-video" src={room.tourVideoUrl} controls playsInline/>:<div className="tour-canvas" ref={mount}>{error&&<div className="tour-error">This tour could not be loaded. Check the property media URL and its CORS settings.</div>}</div>}<div className="tour-footer"><span>Drag to look around · scroll to zoom on 3D models</span><small>Tour media supplied by the property</small></div></section></div>}
-createRoot(document.getElementById('root')).render(<App/>);
+import React, { useCallback, useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { api, dateIn } from './api.js';
+import Home from './Home.jsx';
+import Property from './Property.jsx';
+import Trips from './Trips.jsx';
+import './style.css';
+
+const readRoute = () => window.location.hash.replace(/^#/, '') || '/';
+
+function useRoute() {
+  const [route, setRoute] = useState(readRoute);
+  useEffect(() => {
+    const on = () => setRoute(readRoute());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const navigate = useCallback((to) => {
+    window.location.hash = to;
+    window.scrollTo(0, 0);
+  }, []);
+  return [route, navigate];
+}
+
+function initialStay() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem('aviqr-stay'));
+    if (s?.checkIn >= dateIn(0) && s.checkOut > s.checkIn) return s;
+  } catch { /* fall through to defaults */ }
+  return { checkIn: dateIn(1), checkOut: dateIn(3), adults: 2, children: 0 };
+}
+
+function App() {
+  const [route, navigate] = useRoute();
+  const [config, setConfig] = useState({ brand: 'AviQR Stays' });
+  const [stays, setStays] = useState([]);
+  const [discover, setDiscover] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [favorites, setFavorites] = useState([]);
+  const [stay, setStayState] = useState(initialStay);
+  const setStay = (s) => {
+    setStayState(s);
+    try { sessionStorage.setItem('aviqr-stay', JSON.stringify(s)); } catch { /* storage unavailable */ }
+  };
+
+  useEffect(() => {
+    api.config().then(setConfig).catch(() => {});
+    api.favorites().then((f) => setFavorites(Array.isArray(f) ? f : [])).catch(() => {});
+    api.properties()
+      .then(setStays)
+      .catch(() => setError('Stays are temporarily unavailable. Please try again shortly.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (route === '/') {
+      document.title = `${config.brand || 'AviQR Stays'} · Book direct`;
+      api.discover().then(setDiscover).catch(() => {});
+    }
+  }, [route, config.brand]);
+
+  useEffect(() => {
+    const root = document.documentElement.style;
+    if (config.primary) root.setProperty('--brand', config.primary);
+    if (config.accent) root.setProperty('--accent', config.accent);
+  }, [config]);
+
+  async function toggleFavorite(p) {
+    const on = !favorites.includes(p.id);
+    setFavorites(on ? [p.id, ...favorites] : favorites.filter((x) => x !== p.id));
+    try {
+      await api.saveFavorite(p.id, on);
+    } catch {
+      setFavorites(favorites);
+    }
+  }
+
+  const openStay = (p) => navigate(`/stay/${p.id}`);
+  const stayId = route.match(/^\/stay\/([0-9a-f-]{36})/i)?.[1];
+
+  return (
+    <>
+      <header className="topbar">
+        <a className="brand" href="#/">
+          {config.logo ? <img src={config.logo} alt="" /> : <span className="brandmark">{(config.brand || 'A')[0]}</span>}
+          <span>{config.brand || 'AviQR Stays'}</span>
+        </a>
+        <nav>
+          <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>
+          <a href="#/trips" className={route === '/trips' ? 'on' : ''}>My trips</a>
+          <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
+            Saved{favorites.length ? <b>{favorites.length}</b> : null}
+          </a>
+        </nav>
+      </header>
+      <main>
+        {stayId ? (
+          <Property id={stayId} stay={stay} setStay={setStay} favorites={favorites} onFavorite={toggleFavorite} navigate={navigate} />
+        ) : route === '/trips' ? (
+          <Trips stays={stays} navigate={navigate} />
+        ) : (
+          <Home config={config} stays={stays} discover={discover} loading={loading} error={error} stay={stay} setStay={setStay}
+            favorites={favorites} onFavorite={toggleFavorite} openStay={openStay} />
+        )}
+      </main>
+      <footer className="footer">
+        <span className="brand"><span className="brandmark">{(config.brand || 'A')[0]}</span>{config.brand || 'AviQR Stays'}</span>
+        <span>Live rooms & rates from AviQR PMS · Book direct with the hotel</span>
+        {config.supportEmail && <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>}
+        <span>© {new Date().getFullYear()} {config.brand || 'AviQR'}</span>
+      </footer>
+    </>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);
