@@ -61,6 +61,7 @@ export const api = {
   favorites: () => request(`/favorites?${vid()}`),
   saveFavorite: (id, on) => request(`/favorites/${id}?${vid()}`, { method: on ? 'PUT' : 'DELETE' }),
   trips: () => request(`/trips?${vid()}`),
+  booking: (bookingId) => request(`/bookings/${bookingId}`),
   voucher: (hotelId, reservationId, token) => request(`/vouchers/${hotelId}/${reservationId}?${qs({ token })}`),
   emailVoucher: (hotelId, reservationId, token) => request(`/vouchers/${hotelId}/${reservationId}/email?${qs({ token })}`, { method: 'POST' }),
   findBooking: (reference, phone) => request(`/bookings/find?${qs({ reference, phone })}`),

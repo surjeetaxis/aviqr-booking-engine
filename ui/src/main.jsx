@@ -7,6 +7,7 @@ import Trips from './Trips.jsx';
 import Checkout from './Checkout.jsx';
 import Voucher from './Voucher.jsx';
 import FindBooking from './FindBooking.jsx';
+import BookingDetails from './BookingDetails.jsx';
 import { applyBrand, logoFor } from './brand.js';
 import './style.css';
 
@@ -141,6 +142,8 @@ function App() {
       <main>
         {voucherRoute ? (
           <Voucher hotelId={voucherRoute[1]} reservationId={voucherRoute[2]} token={voucherRoute[3]} config={config} navigate={navigate} />
+        ) : route.match(/^\/booking\/[0-9a-f-]{36}$/i) ? (
+          <BookingDetails bookingId={route.split('/')[2]} config={config} navigate={navigate} />
         ) : route === '/find' ? (
           <FindBooking navigate={navigate} />
         ) : !configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && checkoutRoute ? (

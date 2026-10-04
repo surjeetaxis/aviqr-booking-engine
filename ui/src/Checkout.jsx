@@ -174,7 +174,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
           <h1>You're going to {hotel?.city || hotel?.name}!</h1>
           <p className="muted">Your reservation is confirmed in {hotel?.name}'s system. Show this reference at check-in.</p>
           <div className="ref"><span>REFERENCE</span><b>{done.reference || String(done.reservationId || done.bookingId).slice(0, 8).toUpperCase()}</b></div>
-          {done.guestEmail && <p className="muted small">We've emailed your voucher to {done.guestEmail}.</p>}
+          {done.guestEmail && done.voucherToken && <p className="muted small">We've emailed your voucher to {done.guestEmail}.</p>}
           <dl className="co-totals wide">
             <dt>Rooms</dt><dd>{done.items.map((i) => i.roomType.name).join(', ')}</dd>
             <dt>Dates</dt><dd>{prettyDate(stay.checkIn)} – {prettyDate(stay.checkOut)}</dd>
@@ -186,9 +186,10 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             <dt className="grand">Pay at the hotel</dt><dd className="grand">{money(t.balanceDue || 0)}</dd>
           </dl>
           <div className="row-actions">
-            {done.voucherToken
-              ? <button className="secondary" onClick={() => navigate(`/voucher/${hotelId}/${done.reservationId}/${done.voucherToken}`)}>View voucher</button>
-              : <button className="secondary" onClick={() => navigate('/trips')}>View my trips</button>}
+            <button className="secondary" onClick={() => navigate(done.voucherToken
+              ? `/voucher/${hotelId}/${done.reservationId}/${done.voucherToken}` : `/booking/${done.bookingId}`)}>
+              {done.voucherToken ? 'View voucher' : 'View booking'}
+            </button>
             <button className="primary" onClick={onBackToRooms}>{tenant ? 'Back to the hotel' : 'Back to the stay'}</button>
           </div>
         </div>

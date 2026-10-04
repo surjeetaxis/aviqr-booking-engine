@@ -17,7 +17,9 @@ export default function Trips({ stays, navigate }) {
   const row = (t) => {
     const p = byId.get(t.hotelId) || { name: 'Your stay', city: '' };
     return (
-      <article key={t.bookingId} className="trip" onClick={() => navigate(`/stay/${t.hotelId}`)}>
+      <article key={t.bookingId} className="trip" role="link" tabIndex={0} aria-label={`Booking ${t.reference || ''} at ${p.name}`}
+        onClick={() => navigate(t.voucherToken ? `/voucher/${t.hotelId}/${t.reservationId}/${t.voucherToken}` : `/booking/${t.bookingId}`)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.click()}>
         <Scene seed={t.hotelId} theme={stayTheme(p)} />
         <div>
           <span className="where">{p.city}</span>
@@ -28,9 +30,7 @@ export default function Trips({ stays, navigate }) {
           <span className="ok">Confirmed</span>
           {(t.grandTotal ?? t.totalBeforeTax) != null && <b>{money(t.grandTotal ?? t.totalBeforeTax, t.currency || 'INR')}</b>}
           <small>Ref {t.reference || String(t.reservationId || t.bookingId).slice(0, 8).toUpperCase()}</small>
-          {t.voucherToken && (
-            <button className="text-link" onClick={(e) => { e.stopPropagation(); navigate(`/voucher/${t.hotelId}/${t.reservationId}/${t.voucherToken}`); }}>Voucher →</button>
-          )}
+          <span className="text-link">{t.voucherToken ? 'Voucher' : 'View booking'} →</span>
         </div>
       </article>
     );
