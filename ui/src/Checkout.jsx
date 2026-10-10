@@ -81,12 +81,12 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
     if (!code) return;
     setPromoMsg('');
     try {
-      const p = await api.promo(hotelId, { code, roomTotal: totals.roomTotal, checkIn: stay.checkIn });
+      const p = await api.promo(hotelId, { code, roomTotal: totals.roomTotal, checkIn: stay.checkIn, checkOut: stay.checkOut });
       setPromo(p);
       setPromoMsg(`${p.name} applied`);
     } catch {
       setPromo(null);
-      setPromoMsg("That promo code isn't valid for this stay");
+      setPromoMsg("That promo code isn't valid for this stay. Some codes need a longer stay or a higher total, or have been fully used.");
     }
   }
 

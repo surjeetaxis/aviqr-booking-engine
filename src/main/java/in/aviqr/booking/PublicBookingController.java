@@ -199,11 +199,11 @@ public class PublicBookingController {
     }
     @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
             @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
-            @RequestParam(required=false) LocalDate checkIn) {
+            @RequestParam(required=false) LocalDate checkIn, @RequestParam(required=false) LocalDate checkOut) {
         requireAllowed(hotelId);
         try {
-            return ResponseEntity.ok(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/promo?code={code}&roomTotal={total}&checkIn={in}&storefrontHost={host}&storefrontSlug={slug}",
-                hotelId,code.trim(),roomTotal.max(BigDecimal.ZERO),checkIn==null?"":checkIn,requestHost(),requestSlug()).retrieve().body(Object.class));
+            return ResponseEntity.ok(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/promo?code={code}&roomTotal={total}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,code.trim(),roomTotal.max(BigDecimal.ZERO),checkIn==null?"":checkIn,checkOut==null?"":checkOut,requestHost(),requestSlug()).retrieve().body(Object.class));
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value()==404||e.getStatusCode().value()==400)
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","That promo code isn't valid for this stay"));
