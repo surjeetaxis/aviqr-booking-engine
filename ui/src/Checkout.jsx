@@ -19,6 +19,12 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState(null);
   const [deal, setDeal] = useState(null);
+  const [loyalty, setLoyalty] = useState({ active: false });
+  const [member, setMember] = useState(null);
+  const [challenge, setChallenge] = useState(null);
+  const [loyaltyCode, setLoyaltyCode] = useState('');
+  const [loyaltyMsg, setLoyaltyMsg] = useState('');
+  const [usePoints, setUsePoints] = useState(0);
   const [promoMsg, setPromoMsg] = useState('');
   const [giftInput, setGiftInput] = useState('');
   const [gift, setGift] = useState(null);
@@ -50,7 +56,11 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const totals = checkoutTotals({ items, addOns, picks, taxes: extras?.taxes || [], promo, deal, nights: n });
   // A gift voucher pays what it can now; the PMS confirms the exact amount when booking.
   const giftApplied = gift ? Math.min(Number(gift.balance) || 0, totals.grandTotal) : 0;
-  const due = Math.max(0, totals.grandTotal - giftApplied);
+  const pointValue = Number(member?.pointValue ?? loyalty.pointValue) || 1;
+  const maxPoints = member ? Math.min(member.points, Math.floor(Math.max(0, totals.grandTotal - giftApplied) / pointValue)) : 0;
+  const pointsUsed = Math.min(usePoints, maxPoints);
+  const pointsApplied = Math.round(pointsUsed * pointValue * 100) / 100;
+  const due = Math.max(0, totals.grandTotal - giftApplied - pointsApplied);
   const online = supported && payOptions.mode !== 'PAY_AT_HOTEL' && due > 0;
   const depositPct = Math.max(1, Math.min(100, Number(payOptions.depositPercent) || 100));
   // An estimate: the hotel's system works out the exact amount when it confirms the booking.
@@ -64,6 +74,13 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
 
   // A changed room total changes a percentage promo, so re-check the code with the PMS.
   useEffect(() => { setPromo(null); setPromoMsg(''); }, [totals.roomTotal]);
+  useEffect(() => {
+    if (!totals.roomTotal) return;
+    let live = true;
+    api.loyalty(hotelId, totals.roomTotal).then((l) => live && setLoyalty(l || { active: false }));
+    return () => { live = false; };
+  }, [hotelId, totals.roomTotal]);
+
   // The best deal for this stay, re-checked when the room total changes.
   useEffect(() => {
     if (!totals.roomTotal) return;
@@ -114,6 +131,33 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
     }
   }
 
+  const phoneFull = () => `${form.code} ${form.phone.trim()}`;
+
+  async function sendLoyaltyCode() {
+    setLoyaltyMsg('');
+    if (form.phone.trim().length < 6) { setLoyaltyMsg('Enter your mobile number above first.'); return; }
+    try {
+      const r = await api.loyaltyCode(hotelId, phoneFull());
+      setChallenge(r.challenge || 'none');
+      setLoyaltyMsg(r.emailHint ? `We've emailed a code to ${r.emailHint}.` : "If this number has points with us, we've emailed a code to the address on its profile.");
+    } catch (err) {
+      setLoyaltyMsg(err.status === 429 ? err.message : "The code couldn't be sent. Please try again.");
+    }
+  }
+
+  async function verifyLoyalty() {
+    setLoyaltyMsg('');
+    if (!challenge || challenge === 'none') { setLoyaltyMsg("That code isn't right or has expired"); return; }
+    try {
+      const m = await api.loyaltyVerify(hotelId, { phone: phoneFull(), challenge, code: loyaltyCode.trim() });
+      setMember(m);
+      setUsePoints(m.points);
+      setLoyaltyMsg(m.points ? `You have ${m.points.toLocaleString('en-IN')} points.` : 'You have no points to spend yet, but this stay will earn some.');
+    } catch {
+      setLoyaltyMsg("That code isn't right or has expired");
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     if (guests > capacity) return;
@@ -134,6 +178,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
         ...(promo ? { promoCode: promo.code } : {}),
         ...(gift ? { giftVoucherCode: gift.code } : {}),
         ...(agreed ? { termsAccepted: true } : {}),
+        ...(member ? { loyaltyToken: member.token, loyaltyPoints: pointsUsed } : {}),
         ...(online && pay !== 'HOTEL' ? { paymentOption: pay, paymentReturnUrl: `${window.location.origin}${window.location.pathname}#/paid/${key}` } : {}),
       }, key);
       if (result.payUrl) {
@@ -184,9 +229,11 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             <dt>Taxes & fees{extras.taxes?.length ? ' (est.)' : ''}</dt><dd>{extras.taxes?.length ? money(totals.taxes) : 'At the hotel'}</dd>
             <dt className={giftApplied || payNow ? '' : 'grand'}>Grand total</dt><dd className={giftApplied || payNow ? '' : 'grand'}>{money(totals.grandTotal)}</dd>
             {giftApplied > 0 && <><dt>Gift voucher {gift.code}</dt><dd className="ok">− {money(giftApplied)}</dd></>}
+            {pointsApplied > 0 && <><dt>{pointsUsed.toLocaleString('en-IN')} loyalty points</dt><dd className="ok">− {money(pointsApplied)}</dd></>}
             {payNow > 0 && <><dt className="grand">Pay now</dt><dd className="grand">{money(payNow)}</dd></>}
-            {(giftApplied > 0 || payNow > 0) && <><dt className={payNow > 0 ? '' : 'grand'}>Pay at the hotel</dt><dd className={payNow > 0 ? '' : 'grand'}>{money(dueAtHotel)}</dd></>}
+            {(giftApplied > 0 || pointsApplied > 0 || payNow > 0) && <><dt className={payNow > 0 ? '' : 'grand'}>Pay at the hotel</dt><dd className={payNow > 0 ? '' : 'grand'}>{money(dueAtHotel)}</dd></>}
           </dl>
+          {loyalty.active && loyalty.pointsToEarn > 0 && <p className="muted small">★ This stay earns about {Number(loyalty.pointsToEarn).toLocaleString('en-IN')} loyalty points after check-out.</p>}
           {extras.taxes?.length > 0 && <p className="muted small">{extras.taxes.map((t) => `${t.name} ${t.valueType === 'PERCENT' ? `${Number(t.value)}%` : `${money(t.value)}/night`}`).join(' · ')}</p>}
         </div>
       </div>
@@ -293,6 +340,29 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
                     {giftMsg && <small className={gift ? 'ok' : 'warn'}>{giftMsg}</small>}
                   </div>
                 )}
+                {supported && loyalty.active && (
+                  <div className="field full">Loyalty points
+                    {!member ? (
+                      <>
+                        {!challenge ? (
+                          <span className="promo-row"><span className="muted small">Stayed with us before? Spend your points on this booking.</span>
+                            <button type="button" className="secondary" onClick={sendLoyaltyCode}>Use my points</button></span>
+                        ) : (
+                          <span className="promo-row">
+                            <input inputMode="numeric" maxLength={6} value={loyaltyCode} onChange={(e) => setLoyaltyCode(e.target.value.replace(/\D/g, ''))} placeholder="6-digit code" aria-label="Loyalty code" />
+                            <button type="button" className="secondary" onClick={verifyLoyalty} disabled={loyaltyCode.length !== 6}>Verify</button>
+                          </span>
+                        )}
+                      </>
+                    ) : maxPoints > 0 ? (
+                      <span className="promo-row">
+                        <input type="number" min={0} max={maxPoints} value={pointsUsed} onChange={(e) => setUsePoints(Math.max(0, Math.min(maxPoints, Number(e.target.value) || 0)))} aria-label="Points to use" />
+                        <span className="muted small">of {maxPoints.toLocaleString('en-IN')} usable · {money(pointValue)} each</span>
+                      </span>
+                    ) : null}
+                    {loyaltyMsg && <small className={member ? 'ok' : 'muted'}>{loyaltyMsg}</small>}
+                  </div>
+                )}
                 {supported && (
                   <div className="field full">Promo code
                     <span className="promo-row">
@@ -342,7 +412,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
       </div>
 
       <div className="cart-bar">
-        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · {payNow > 0 ? 'pay now' : giftApplied ? 'pay at hotel' : 'total'}</small><b>{money(payNow > 0 ? payNow : dueAtHotel)}</b></div>
+        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · {payNow > 0 ? 'pay now' : giftApplied || pointsApplied ? 'pay at hotel' : 'total'}</small><b>{money(payNow > 0 ? payNow : dueAtHotel)}</b></div>
         {step === 'addons' ? (
           <div className="row-actions">
             <button className="ghost" onClick={() => { setPicks({}); setStep('details'); }}>Skip</button>

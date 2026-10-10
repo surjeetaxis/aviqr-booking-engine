@@ -221,6 +221,44 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** The hotel's loyalty program and what this stay would earn; inactive on an older PMS. */
+    @GetMapping("/properties/{hotelId}/loyalty") public Object loyalty(@PathVariable UUID hotelId, @RequestParam(defaultValue="0") BigDecimal roomTotal) {
+        requireAllowed(hotelId);
+        try {
+            return mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/loyalty?roomTotal={total}&storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,roomTotal.max(BigDecimal.ZERO),requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of("active",false);
+            throw new OtaUpstreamException(e);
+        }
+    }
+    /** Emails a code for spending points; same reply whether or not the phone has points. */
+    @PostMapping(value="/properties/{hotelId}/loyalty/code", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Object> loyaltyCode(@PathVariable UUID hotelId, @Valid @RequestBody LoyaltyCodeRequest body) {
+        requireAllowed(hotelId);
+        return loyaltyPost(hotelId,"code",Map.of("phone",body.phone(),"storefrontHost",requestHost(),"storefrontSlug",requestSlug()));
+    }
+    @PostMapping(value="/properties/{hotelId}/loyalty/verify", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Object> loyaltyVerify(@PathVariable UUID hotelId, @Valid @RequestBody LoyaltyVerifyRequest body) {
+        requireAllowed(hotelId);
+        return loyaltyPost(hotelId,"verify",Map.of("phone",body.phone(),"challenge",body.challenge(),"code",body.code(),
+            "storefrontHost",requestHost(),"storefrontSlug",requestSlug()));
+    }
+    private ResponseEntity<Object> loyaltyPost(UUID hotelId, String op, Map<String,String> body) {
+        String path="/api/v1/pms/public/booking-engine/"+hotelId+"/loyalty/"+op;
+        try {
+            return ResponseEntity.ok(aviQr.post().uri(path).contentType(MediaType.APPLICATION_JSON)
+                .body(encryption.seal("POST",path,body)).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            JsonNode upstream=readJson(e.getResponseBodyAsString());
+            int status=e.getStatusCode().value();
+            if (status==400||status==429) return ResponseEntity.status(status).body(Map.of("message",upstream.path("message").asText("That didn't work")));
+            throw new OtaUpstreamException(e);
+        }
+    }
+    public record LoyaltyCodeRequest(@NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String phone) { }
+    public record LoyaltyVerifyRequest(@NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String phone,
+        @NotBlank @Size(max=400) String challenge, @NotBlank @Pattern(regexp="^[0-9]{6}$") String code) { }
     @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
             @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
             @RequestParam(required=false) LocalDate checkIn, @RequestParam(required=false) LocalDate checkOut) {
@@ -270,7 +308,8 @@ public class PublicBookingController {
         if (lines.stream().map(RoomLine::roomId).distinct().count()!=lines.size())
             return ResponseEntity.badRequest().body(Map.of("message","Each room can only be chosen once"));
         boolean advanced=lines.size()>1||!request.addOnLines().isEmpty()||(request.promoCode()!=null&&!request.promoCode().isBlank())
-            ||(request.giftVoucherCode()!=null&&!request.giftVoucherCode().isBlank())||request.paysOnline();
+            ||(request.giftVoucherCode()!=null&&!request.giftVoucherCode().isBlank())||request.paysOnline()
+            ||(request.loyaltyToken()!=null&&!request.loyaltyToken().isBlank());
         // An older PMS ignores unknown fields and would book only the first room, so never send it extras.
         if (advanced&&!Boolean.TRUE.equals(extras(hotelId).get("supported")))
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","This hotel can't take multi-room, add-on or promo bookings online yet"));
@@ -308,7 +347,8 @@ public class PublicBookingController {
                 ? new PmsCheckoutRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),lines,request.addOnLines(),blankToNull(request.promoCode()),
                     blankToNull(request.giftVoucherCode()),request.termsAccepted(),request.paysOnline()?request.paymentOption():null,
-                    request.paysOnline()?request.paymentReturnUrl():null,requestId,requestHost(),requestSlug())
+                    request.paysOnline()?request.paymentReturnUrl():null,blankToNull(request.loyaltyToken()),request.loyaltyPoints(),
+                    requestId,requestHost(),requestSlug())
                 : new PmsBookingRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),first.roomTypeId(),first.ratePlanId(),first.roomId(),
                     request.termsAccepted(),requestId,requestHost(),requestSlug());
@@ -527,7 +567,8 @@ public class PublicBookingController {
         UUID roomTypeId,UUID ratePlanId,UUID roomId,
         @Size(max=9) List<@Valid RoomLine> rooms, @Size(max=10) List<@Valid AddOnLine> addOns,
         @Size(max=32) String promoCode, @Size(max=40) String giftVoucherCode, Boolean termsAccepted,
-        @Pattern(regexp="^(HOTEL|DEPOSIT|FULL)$") String paymentOption, @Size(max=500) String paymentReturnUrl, UUID visitorId) {
+        @Pattern(regexp="^(HOTEL|DEPOSIT|FULL)$") String paymentOption, @Size(max=500) String paymentReturnUrl,
+        @Size(max=400) String loyaltyToken, @Min(0) @Max(10000000) Integer loyaltyPoints, UUID visitorId) {
         boolean paysOnline() { return "DEPOSIT".equals(paymentOption)||"FULL".equals(paymentOption); }
         /** The rooms list, or the older single-room fields. */
         List<RoomLine> lines() {
@@ -542,7 +583,7 @@ public class PublicBookingController {
     private record PmsBookingRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
         Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,Boolean termsAccepted,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     private record PmsCheckoutRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
-        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,Boolean termsAccepted,String paymentOption,String paymentReturnUrl,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
+        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,Boolean termsAccepted,String paymentOption,String paymentReturnUrl,String loyaltyToken,Integer loyaltyPoints,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     @RestControllerAdvice static class Errors {
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
             return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));
