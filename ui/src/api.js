@@ -66,6 +66,7 @@ export const api = {
   roomMap: (id, p) => request(`/properties/${id}/room-map?${qs(p)}`),
   favorites: () => request(`/favorites?${vid()}`),
   saveFavorite: (id, on) => request(`/favorites/${id}?${vid()}`, { method: on ? 'PUT' : 'DELETE' }),
+  currencies: () => request('/currencies'),
   trips: () => request(`/trips?${vid()}`),
   booking: (bookingId) => request(`/bookings/${bookingId}`),
   bookingByRequest: (key) => request(`/bookings/by-request/${key}`),
@@ -88,8 +89,27 @@ export const dateIn = (n) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export const money = (amount, currency = 'INR') =>
+// Display currency: hotel prices are in INR and shown converted at today's rate when the
+// guest picks another currency. What's charged is always INR, so receipts use moneyExact.
+const display = { currency: 'INR', rates: { INR: 1 } };
+try { display.currency = localStorage.getItem('aviqr-currency') || 'INR'; } catch { /* storage unavailable */ }
+
+export const displayCurrency = () => (display.rates[display.currency] ? display.currency : 'INR');
+export function setExchangeRates(rates) { display.rates = { INR: 1, ...(rates || {}) }; }
+export function setDisplayCurrency(code) {
+  display.currency = code;
+  try { localStorage.setItem('aviqr-currency', code); } catch { /* storage unavailable */ }
+}
+
+export const moneyExact = (amount, currency = 'INR') =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(amount));
+
+export function money(amount, currency = 'INR') {
+  const to = displayCurrency();
+  if (currency !== 'INR' || to === 'INR') return moneyExact(amount, currency);
+  const value = Number(amount) * Number(display.rates[to]);
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: to, maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 }).format(value);
+}
 
 export const nights = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 

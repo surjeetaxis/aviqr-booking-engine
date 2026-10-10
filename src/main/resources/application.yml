@@ -32,3 +32,5 @@ aviqr:
     logo: ${BRAND_LOGO:}
     support-email: ${BRAND_SUPPORT_EMAIL:}
     property-ids: ${PROPERTY_IDS:}
+  # Display-only currency conversion from INR; bookings are charged in INR.
+  exchange-rates-url: ${EXCHANGE_RATES_URL:https://open.er-api.com/v6/latest/INR}

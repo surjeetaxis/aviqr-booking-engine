@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, dateIn } from './api.js';
+import { api, dateIn, displayCurrency, setDisplayCurrency, setExchangeRates } from './api.js';
 import Home from './Home.jsx';
 import Property from './Property.jsx';
 import Trips from './Trips.jsx';
@@ -74,9 +74,13 @@ function App() {
   const [cart, setCartState] = useState(() => readSession('aviqr-cart', { items: [] }));
   const setCart = (c) => { setCartState(c); writeSession('aviqr-cart', c); };
   const [dark, toggleTheme] = useTheme();
+  const [currencies, setCurrencies] = useState({ popular: ['INR'], rates: { INR: 1 } });
+  const [currency, setCurrency] = useState(displayCurrency);
+  const chooseCurrency = (code) => { setDisplayCurrency(code); setCurrency(code); };
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => {}).finally(() => setConfigReady(true));
+    api.currencies().then((c) => { setExchangeRates(c.rates); setCurrencies(c); setCurrency(displayCurrency()); }).catch(() => {});
     api.favorites().then((f) => setFavorites(Array.isArray(f) ? f : [])).catch(() => {});
     api.properties()
       .then(setStays)
@@ -135,6 +139,12 @@ function App() {
           {!tenantStorefront && <a href="#/" className={route === '/' ? 'on' : ''}>Explore</a>}
           <a href="#/trips" className={route === '/trips' ? 'on' : ''}>My trips</a>
           <a href="#/find" className={route === '/find' ? 'on' : ''}>Find booking</a>
+          {Object.keys(currencies.rates || {}).length > 1 && (
+            <select className="currency-pick" value={currency} onChange={(e) => chooseCurrency(e.target.value)} aria-label="Display currency" title="Show prices in">
+              <optgroup label="Popular">{currencies.popular.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>
+              <optgroup label="All currencies">{Object.keys(currencies.rates).filter((c) => !currencies.popular.includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>
+            </select>
+          )}
           <button className="theme-toggle" onClick={toggleTheme} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? '☀' : '☾'}</button>
           {!tenantStorefront && <a href="#/" onClick={() => setTimeout(() => document.getElementById('saved')?.scrollIntoView({ behavior: 'smooth' }), 50)}>
             Saved{favorites.length ? <b>{favorites.length}</b> : null}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api, money, nights } from './api.js';
+import { api, moneyExact as money, nights } from './api.js';
 import { logoFor } from './brand.js';
 
 const longDate = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });

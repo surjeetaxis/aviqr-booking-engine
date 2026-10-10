@@ -263,6 +263,7 @@ nav b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 
 .field input:focus { border-color: var(--brand); outline: 0; }
 .confirmed { text-align: center; }
 .confirmed .summary { text-align: left; }
+.currency-pick { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; font-size: 13px; font-weight: 600; background: var(--paper); color: var(--ink); cursor: pointer; }
 .check.warn { background: var(--warn, #b45309); }
 .button-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .check { width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; font-size: 30px; }

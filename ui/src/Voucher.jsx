@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api, money, nights, titleCase } from './api.js';
+import { api, moneyExact as money, nights, titleCase } from './api.js';
 import { logoFor } from './brand.js';
 
 const STATUS = { BOOKED: 'Confirmed', CHECKED_IN: 'Checked in', CHECKED_OUT: 'Checked out', CANCELLED: 'Cancelled', NO_SHOW: 'No-show' };

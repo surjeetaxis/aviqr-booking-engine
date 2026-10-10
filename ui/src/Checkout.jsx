@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api, money, nights, prettyDate, titleCase } from './api.js';
+import { api, displayCurrency, money, moneyExact, nights, prettyDate, titleCase } from './api.js';
 import { Stepper } from './Flow.jsx';
 import { checkoutTotals } from './pricing.js';
 import { Lines } from './Property.jsx';
@@ -233,6 +233,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             {payNow > 0 && <><dt className="grand">Pay now</dt><dd className="grand">{money(payNow)}</dd></>}
             {(giftApplied > 0 || pointsApplied > 0 || payNow > 0) && <><dt className={payNow > 0 ? '' : 'grand'}>Pay at the hotel</dt><dd className={payNow > 0 ? '' : 'grand'}>{money(dueAtHotel)}</dd></>}
           </dl>
+          {displayCurrency() !== 'INR' && <p className="muted small">Prices in {displayCurrency()} are approximate, at today's rate. You're charged in INR: {moneyExact(totals.grandTotal)} in total{payNow > 0 ? `, ${moneyExact(payNow)} now` : ''}.</p>}
           {loyalty.active && loyalty.pointsToEarn > 0 && <p className="muted small">★ This stay earns about {Number(loyalty.pointsToEarn).toLocaleString('en-IN')} loyalty points after check-out.</p>}
           {extras.taxes?.length > 0 && <p className="muted small">{extras.taxes.map((t) => `${t.name} ${t.valueType === 'PERCENT' ? `${Number(t.value)}%` : `${money(t.value)}/night`}`).join(' · ')}</p>}
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, money } from './api.js';
+import { api, moneyExact as money } from './api.js';
 
 const SYNC_TRIES = 6;
 
