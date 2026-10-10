@@ -107,6 +107,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
               </div>
             )}
           </div>
+          <p className="muted small group-link">Booking 10+ rooms, a wedding or an offsite? <a className="text-link" href={`#/stay/${id}/group`}>Request a group quote</a></p>
           {deals.length > 0 && (
             <div className="deals" aria-label="Deals at this hotel">
               {deals.map((d) => (
@@ -119,7 +120,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
             </div>
           )}
           {asked > 1 && extras && !extras.supported && (
-            <p className="note warn">This hotel takes one room per online booking for now. Book each room separately, or contact the hotel for group stays.</p>
+            <p className="note warn">This hotel takes one room per online booking for now. Book each room separately, or <a className="text-link" href={`#/stay/${id}/group`}>request a group quote</a>.</p>
           )}
           {roomTypes == null ? (
             <div className="skeleton-list"><div /><div /></div>

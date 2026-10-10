@@ -256,6 +256,32 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** A group quote request; the PMS limits enquiries per guest, so pass the guest's address along. */
+    @PostMapping(value="/properties/{hotelId}/group-enquiries", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Object> groupEnquiry(@PathVariable UUID hotelId, @Valid @RequestBody GroupEnquiryRequest r) {
+        requireAllowed(hotelId);
+        String path="/api/v1/pms/public/booking-engine/"+hotelId+"/group-enquiries";
+        Map<String,Object> body=new LinkedHashMap<>();
+        body.put("organizerName",r.organizerName().trim()); body.put("organizerPhone",r.organizerPhone().trim());
+        body.put("organizerEmail",blankToNull(r.organizerEmail())); body.put("company",blankToNull(r.company()));
+        body.put("eventType",r.eventType()); body.put("checkInDate",r.checkInDate().toString()); body.put("checkOutDate",r.checkOutDate().toString());
+        body.put("rooms",r.rooms()); body.put("guests",r.guests()); body.put("message",blankToNull(r.message()));
+        body.put("storefrontHost",requestHost()); body.put("storefrontSlug",requestSlug());
+        try {
+            return ResponseEntity.ok(aviQr.post().uri(path).contentType(MediaType.APPLICATION_JSON).header("X-Forwarded-For",clientIp())
+                .body(encryption.seal("POST",path,body)).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            int status=e.getStatusCode().value();
+            if (status==400||status==429||status==404) return ResponseEntity.status(status).body(Map.of("message",
+                readJson(e.getResponseBodyAsString()).path("message").asText(status==404?"Group enquiries aren't available for this hotel":"The enquiry couldn't be sent")));
+            throw new OtaUpstreamException(e);
+        }
+    }
+    public record GroupEnquiryRequest(@NotBlank @Size(max=120) String organizerName, @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String organizerPhone,
+        @Email @Size(max=254) String organizerEmail, @Size(max=120) String company,
+        @Pattern(regexp="^(WEDDING|CORPORATE|CONFERENCE|TOUR|SPORTS|OTHER)$") String eventType,
+        @NotNull @FutureOrPresent LocalDate checkInDate, @NotNull @Future LocalDate checkOutDate,
+        @NotNull @Min(1) @Max(500) Integer rooms, @Min(1) @Max(2000) Integer guests, @Size(max=1000) String message) { }
     public record LoyaltyCodeRequest(@NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String phone) { }
     public record LoyaltyVerifyRequest(@NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String phone,
         @NotBlank @Size(max=400) String challenge, @NotBlank @Pattern(regexp="^[0-9]{6}$") String code) { }

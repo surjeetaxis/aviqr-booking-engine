@@ -7,6 +7,7 @@ import Trips from './Trips.jsx';
 import Checkout from './Checkout.jsx';
 import Voucher from './Voucher.jsx';
 import PaymentReturn from './PaymentReturn.jsx';
+import GroupEnquiry from './GroupEnquiry.jsx';
 import FindBooking from './FindBooking.jsx';
 import BookingDetails from './BookingDetails.jsx';
 import { applyBrand, logoFor } from './brand.js';
@@ -118,6 +119,7 @@ function App() {
     : config.mode === 'TENANT' ? config.propertyId : null;
   const tenantStorefront = config.mode === 'TENANT';
   const checkoutRoute = /\/checkout$/.test(route);
+  const groupRoute = /\/group$/.test(route);
   const paidRoute = route.match(/^\/paid\/([0-9a-f-]{36})(\?|$)/i);
   const voucherRoute = route.match(/^\/voucher\/([0-9a-f-]{36})\/([0-9a-f-]{36})\/([A-Za-z0-9_-]{8,64})$/i);
   // The cart belongs to one hotel and one set of dates; changing either starts over.
@@ -160,7 +162,9 @@ function App() {
           <BookingDetails bookingId={route.split('/')[2]} config={config} navigate={navigate} />
         ) : route === '/find' ? (
           <FindBooking navigate={navigate} />
-        ) : !configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && checkoutRoute ? (
+        ) : !configReady && routeStayKey && !stayId ? <div className="page-msg"><div className="spinner" />Loading booking engine…</div> : stayId && groupRoute ? (
+          <GroupEnquiry hotelId={stayId} stay={stay} navigate={navigate} backPath={roomsPath} />
+        ) : stayId && checkoutRoute ? (
           <Checkout hotelId={stayId} stay={stay} items={cartItems} navigate={navigate} tenant={tenantStorefront}
             onBackToRooms={() => navigate(roomsPath)} onBooked={() => setCart({ items: [] })} />
         ) : stayId ? (
