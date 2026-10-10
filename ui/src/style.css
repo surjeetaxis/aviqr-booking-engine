@@ -263,6 +263,8 @@ nav b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 
 .field input:focus { border-color: var(--brand); outline: 0; }
 .confirmed { text-align: center; }
 .confirmed .summary { text-align: left; }
+.check.warn { background: var(--warn, #b45309); }
+.button-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .check { width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; font-size: 30px; }
 .confirmed p { color: var(--muted); }
 .ref { display: inline-grid; gap: 2px; padding: 12px 22px; border: 1.5px dashed var(--brand); border-radius: 14px; margin-bottom: 16px; }

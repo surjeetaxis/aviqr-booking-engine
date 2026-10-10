@@ -186,6 +186,17 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** Whether the hotel takes deposits online; an older PMS means pay at the hotel. */
+    @GetMapping("/properties/{hotelId}/payment-options") public Object paymentOptions(@PathVariable UUID hotelId) {
+        requireAllowed(hotelId);
+        try {
+            return mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/payment-options?storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of("mode","PAY_AT_HOTEL","depositPercent",100);
+            throw new OtaUpstreamException(e);
+        }
+    }
     @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
             @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
             @RequestParam(required=false) LocalDate checkIn) {
@@ -235,10 +246,13 @@ public class PublicBookingController {
         if (lines.stream().map(RoomLine::roomId).distinct().count()!=lines.size())
             return ResponseEntity.badRequest().body(Map.of("message","Each room can only be chosen once"));
         boolean advanced=lines.size()>1||!request.addOnLines().isEmpty()||(request.promoCode()!=null&&!request.promoCode().isBlank())
-            ||(request.giftVoucherCode()!=null&&!request.giftVoucherCode().isBlank());
+            ||(request.giftVoucherCode()!=null&&!request.giftVoucherCode().isBlank())||request.paysOnline();
         // An older PMS ignores unknown fields and would book only the first room, so never send it extras.
         if (advanced&&!Boolean.TRUE.equals(extras(hotelId).get("supported")))
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message","This hotel can't take multi-room, add-on or promo bookings online yet"));
+        // The gateway returns the guest to this storefront only, never to a URL someone else chose.
+        if (request.paysOnline()&&!sameHost(request.paymentReturnUrl()))
+            return ResponseEntity.badRequest().body(Map.of("message","Invalid payment return address"));
         UUID requestId=suppliedKey!=null?suppliedKey:UUID.randomUUID();
         String fingerprint=fingerprint(hotelId,request,lines);
         OtaBookingOrder order=bookingOrders.findByRequestId(requestId.toString()).orElse(null);
@@ -269,7 +283,8 @@ public class PublicBookingController {
             Object body=advanced
                 ? new PmsCheckoutRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),lines,request.addOnLines(),blankToNull(request.promoCode()),
-                    blankToNull(request.giftVoucherCode()),request.termsAccepted(),requestId,requestHost(),requestSlug())
+                    blankToNull(request.giftVoucherCode()),request.termsAccepted(),request.paysOnline()?request.paymentOption():null,
+                    request.paysOnline()?request.paymentReturnUrl():null,requestId,requestHost(),requestSlug())
                 : new PmsBookingRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),first.roomTypeId(),first.ratePlanId(),first.roomId(),
                     request.termsAccepted(),requestId,requestHost(),requestSlug());
@@ -286,6 +301,10 @@ public class PublicBookingController {
                 roomTotal=decimal(totals,"roomTotal",roomTotal);
                 order.totals(decimal(totals,"addOnTotal",null),decimal(totals,"discount",null),decimal(totals,"estimatedTaxes",null),decimal(totals,"grandTotal",null));
                 order.payment(decimal(totals,"voucherApplied",null),decimal(totals,"balanceDue",null));
+            }
+            JsonNode online=reservation.path("payment");
+            if (online.path("payUrl").isTextual()) {
+                order.online(online.path("payUrl").asText(),decimal(online,"amount",null),online.path("kind").asText("DEPOSIT"));
             }
             order.confirm(pmsId,roomTotal,currency);
             order=bookingOrders.save(order);
@@ -311,6 +330,18 @@ public class PublicBookingController {
             @RequestParam @Size(max=64) String token) {
         requireAllowed(hotelId);
         return get("/api/v1/pms/public/booking-engine/{id}/reservations/{res}/voucher?token={token}",hotelId,reservationId,token);
+    }
+    /** After paying online: the PMS reads the result from the gateway service and posts it to the folio. */
+    @PostMapping("/vouchers/{hotelId}/{reservationId}/payment-sync") public ResponseEntity<Object> syncPayment(@PathVariable UUID hotelId,
+            @PathVariable UUID reservationId, @RequestParam @Size(max=64) String token) {
+        requireAllowed(hotelId);
+        try {
+            return ResponseEntity.ok(aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/reservations/{res}/payment/sync?token={token}",
+                hotelId,reservationId,token).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","No online payment for this booking"));
+            throw new OtaUpstreamException(e);
+        }
     }
     @PostMapping("/vouchers/{hotelId}/{reservationId}/email") public ResponseEntity<Object> emailVoucher(@PathVariable UUID hotelId,
             @PathVariable UUID reservationId, @RequestParam @Size(max=64) String token) {
@@ -339,6 +370,12 @@ public class PublicBookingController {
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /** The booking a checkout's idempotency key made: how the storefront finds it again after the payment gateway. */
+    @GetMapping("/bookings/by-request/{requestId}") public ResponseEntity<Object> bookingByRequest(@PathVariable UUID requestId) {
+        return bookingOrders.findByRequestId(requestId.toString()).filter(o -> "CONFIRMED".equals(o.getStatus()))
+            .map(o -> ResponseEntity.ok(confirmation(o))).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     private Object confirmation(OtaBookingOrder o) {
         return Map.of("success",true,"message","Booking status","data",confirmationData(o));
     }
@@ -352,6 +389,7 @@ public class PublicBookingController {
         data.put("estimatedTaxes",o.getEstimatedTaxes()); data.put("grandTotal",o.getGrandTotal());
         data.put("reference",o.getReference()); data.put("voucherToken",o.getVoucherToken());
         data.put("voucherApplied",o.getVoucherApplied()); data.put("balanceDue",o.getBalanceDue());
+        if (o.getPayUrl()!=null) { data.put("payUrl",o.getPayUrl()); data.put("payAmount",o.getPayAmount()); data.put("payKind",o.getPayKind()); }
         return data;
     }
     private static String blankToNull(String v) { return v==null||v.isBlank()?null:v.trim(); }
@@ -434,6 +472,17 @@ public class PublicBookingController {
         if (host==null||host.isBlank()) host=attrs.getRequest().getHeader("Host");
         return host==null?"":host.split(",")[0].trim();
     }
+    /** An https URL (or local http) on the host this request came in on. */
+    private boolean sameHost(String url) {
+        try {
+            java.net.URI u=java.net.URI.create(url==null?"":url);
+            String host=requestHost().replaceFirst(":\\d+$","");
+            boolean local="http".equals(u.getScheme())&&("localhost".equals(u.getHost())||"127.0.0.1".equals(u.getHost()));
+            return u.getHost()!=null&&u.getHost().equalsIgnoreCase(host)&&("https".equals(u.getScheme())||local)&&u.getRawUserInfo()==null;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
     private String clientIp() {
         ServletRequestAttributes attrs=(ServletRequestAttributes)RequestContextHolder.getRequestAttributes();
         if (attrs==null) return "";
@@ -453,7 +502,9 @@ public class PublicBookingController {
         @NotNull @Min(1) @Max(36) Integer adults,@Min(0) @Max(24) Integer children,
         UUID roomTypeId,UUID ratePlanId,UUID roomId,
         @Size(max=9) List<@Valid RoomLine> rooms, @Size(max=10) List<@Valid AddOnLine> addOns,
-        @Size(max=32) String promoCode, @Size(max=40) String giftVoucherCode, Boolean termsAccepted, UUID visitorId) {
+        @Size(max=32) String promoCode, @Size(max=40) String giftVoucherCode, Boolean termsAccepted,
+        @Pattern(regexp="^(HOTEL|DEPOSIT|FULL)$") String paymentOption, @Size(max=500) String paymentReturnUrl, UUID visitorId) {
+        boolean paysOnline() { return "DEPOSIT".equals(paymentOption)||"FULL".equals(paymentOption); }
         /** The rooms list, or the older single-room fields. */
         List<RoomLine> lines() {
             if (rooms!=null&&!rooms.isEmpty()) return rooms;
@@ -467,7 +518,7 @@ public class PublicBookingController {
     private record PmsBookingRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
         Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,Boolean termsAccepted,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     private record PmsCheckoutRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
-        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,Boolean termsAccepted,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
+        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,Boolean termsAccepted,String paymentOption,String paymentReturnUrl,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     @RestControllerAdvice static class Errors {
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
             return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));

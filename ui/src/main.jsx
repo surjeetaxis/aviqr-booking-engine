@@ -6,6 +6,7 @@ import Property from './Property.jsx';
 import Trips from './Trips.jsx';
 import Checkout from './Checkout.jsx';
 import Voucher from './Voucher.jsx';
+import PaymentReturn from './PaymentReturn.jsx';
 import FindBooking from './FindBooking.jsx';
 import BookingDetails from './BookingDetails.jsx';
 import { applyBrand, logoFor } from './brand.js';
@@ -113,6 +114,7 @@ function App() {
     : config.mode === 'TENANT' ? config.propertyId : null;
   const tenantStorefront = config.mode === 'TENANT';
   const checkoutRoute = /\/checkout$/.test(route);
+  const paidRoute = route.match(/^\/paid\/([0-9a-f-]{36})(\?|$)/i);
   const voucherRoute = route.match(/^\/voucher\/([0-9a-f-]{36})\/([0-9a-f-]{36})\/([A-Za-z0-9_-]{8,64})$/i);
   // The cart belongs to one hotel and one set of dates; changing either starts over.
   const cartItems = cart.hotelId === stayId && cart.checkIn === stay.checkIn && cart.checkOut === stay.checkOut ? cart.items : [];
@@ -140,7 +142,9 @@ function App() {
         </nav>
       </header>
       <main>
-        {voucherRoute ? (
+        {paidRoute ? (
+          <PaymentReturn requestKey={paidRoute[1]} navigate={navigate} />
+        ) : voucherRoute ? (
           <Voucher hotelId={voucherRoute[1]} reservationId={voucherRoute[2]} token={voucherRoute[3]} config={config} navigate={navigate} />
         ) : route.match(/^\/booking\/[0-9a-f-]{36}$/i) ? (
           <BookingDetails bookingId={route.split('/')[2]} config={config} navigate={navigate} />

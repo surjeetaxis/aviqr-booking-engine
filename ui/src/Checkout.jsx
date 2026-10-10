@@ -11,6 +11,8 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const [extras, setExtras] = useState(null);
   const [terms, setTerms] = useState(null);
   const [agreed, setAgreed] = useState(false);
+  const [payOptions, setPayOptions] = useState({ mode: 'PAY_AT_HOTEL', depositPercent: 100 });
+  const [pay, setPay] = useState('HOTEL');
   const [step, setStep] = useState(null);
   const [picks, setPicks] = useState({});
   const [form, setForm] = useState({ guestName: '', guestEmail: '', code: '+91', phone: '', specialRequests: '' });
@@ -32,6 +34,10 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
     window.scrollTo(0, 0);
     api.property(hotelId).then(setHotel).catch(() => setHotel({ id: hotelId, name: 'Your stay' }));
     api.policies(hotelId).then(setTerms);
+    api.paymentOptions(hotelId).then((o) => {
+      setPayOptions(o);
+      if (o.mode === 'REQUIRED') setPay(o.depositPercent >= 100 ? 'FULL' : 'DEPOSIT');
+    });
     api.extras(hotelId).then((x) => {
       setExtras(x);
       setStep((s) => s || (x.addOns?.length ? 'addons' : 'details'));
@@ -43,7 +49,12 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const totals = checkoutTotals({ items, addOns, picks, taxes: extras?.taxes || [], promo, nights: n });
   // A gift voucher pays what it can now; the PMS confirms the exact amount when booking.
   const giftApplied = gift ? Math.min(Number(gift.balance) || 0, totals.grandTotal) : 0;
-  const dueAtHotel = Math.max(0, totals.grandTotal - giftApplied);
+  const due = Math.max(0, totals.grandTotal - giftApplied);
+  const online = supported && payOptions.mode !== 'PAY_AT_HOTEL' && due > 0;
+  const depositPct = Math.max(1, Math.min(100, Number(payOptions.depositPercent) || 100));
+  // An estimate: the hotel's system works out the exact amount when it confirms the booking.
+  const payNow = !online || pay === 'HOTEL' ? 0 : pay === 'FULL' ? due : Math.round(due * depositPct) / 100;
+  const dueAtHotel = Math.max(0, due - payNow);
   const guests = Number(stay.adults) + Number(stay.children || 0);
   const capacity = items.reduce((s, i) => s + Number(i.roomType.maxOccupancy || 2), 0);
   // A rate plan's own cancellation policy wins; otherwise the hotel's default applies.
@@ -114,7 +125,13 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
         ...(promo ? { promoCode: promo.code } : {}),
         ...(gift ? { giftVoucherCode: gift.code } : {}),
         ...(agreed ? { termsAccepted: true } : {}),
+        ...(online && pay !== 'HOTEL' ? { paymentOption: pay, paymentReturnUrl: `${window.location.origin}${window.location.pathname}#/paid/${key}` } : {}),
       }, key);
+      if (result.payUrl) {
+        onBooked();
+        window.location.assign(result.payUrl);
+        return;
+      }
       setDone({ ...result, shown: totals, items, guestEmail: supported ? form.guestEmail.trim() : '' });
       setStep('done');
       onBooked();
@@ -156,9 +173,10 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
             {totals.addOnTotal > 0 && <><dt>Add-ons</dt><dd>{money(totals.addOnTotal)}</dd></>}
             {totals.discount > 0 && <><dt>Promo {promo?.code}</dt><dd className="ok">− {money(totals.discount)}</dd></>}
             <dt>Taxes & fees{extras.taxes?.length ? ' (est.)' : ''}</dt><dd>{extras.taxes?.length ? money(totals.taxes) : 'At the hotel'}</dd>
-            <dt className={giftApplied ? '' : 'grand'}>Grand total</dt><dd className={giftApplied ? '' : 'grand'}>{money(totals.grandTotal)}</dd>
-            {giftApplied > 0 && <><dt>Gift voucher {gift.code}</dt><dd className="ok">− {money(giftApplied)}</dd>
-              <dt className="grand">Pay at the hotel</dt><dd className="grand">{money(dueAtHotel)}</dd></>}
+            <dt className={giftApplied || payNow ? '' : 'grand'}>Grand total</dt><dd className={giftApplied || payNow ? '' : 'grand'}>{money(totals.grandTotal)}</dd>
+            {giftApplied > 0 && <><dt>Gift voucher {gift.code}</dt><dd className="ok">− {money(giftApplied)}</dd></>}
+            {payNow > 0 && <><dt className="grand">Pay now</dt><dd className="grand">{money(payNow)}</dd></>}
+            {(giftApplied > 0 || payNow > 0) && <><dt className={payNow > 0 ? '' : 'grand'}>Pay at the hotel</dt><dd className={payNow > 0 ? '' : 'grand'}>{money(dueAtHotel)}</dd></>}
           </dl>
           {extras.taxes?.length > 0 && <p className="muted small">{extras.taxes.map((t) => `${t.name} ${t.valueType === 'PERCENT' ? `${Number(t.value)}%` : `${money(t.value)}/night`}`).join(' · ')}</p>}
         </div>
@@ -278,8 +296,19 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
                 )}
                 <fieldset className="field full pay">
                   <legend>Payment</legend>
-                  <label className="pay-opt on"><input type="radio" name="pay" defaultChecked /> <span><b>Pay at the hotel</b><small>No card needed now</small></span></label>
-                  <label className="pay-opt off"><input type="radio" name="pay" disabled /> <span><b>Pay now</b><small>Online payment coming soon</small></span></label>
+                  {online && depositPct < 100 && (
+                    <label className={`pay-opt ${pay === 'DEPOSIT' ? 'on' : ''}`}><input type="radio" name="pay" checked={pay === 'DEPOSIT'} onChange={() => setPay('DEPOSIT')} />
+                      <span><b>Pay {depositPct}% deposit now · {money(Math.round(due * depositPct) / 100)}</b><small>The rest, {money(due - Math.round(due * depositPct) / 100)}, at the hotel{payOptions.gateway ? ` · via ${payOptions.gateway}` : ''}</small></span></label>
+                  )}
+                  {online && (
+                    <label className={`pay-opt ${pay === 'FULL' ? 'on' : ''}`}><input type="radio" name="pay" checked={pay === 'FULL'} onChange={() => setPay('FULL')} />
+                      <span><b>Pay in full now · {money(due)}</b><small>Nothing to pay at the hotel{payOptions.gateway ? ` · via ${payOptions.gateway}` : ''}</small></span></label>
+                  )}
+                  {(!online || payOptions.mode === 'OPTIONAL') && (
+                    <label className={`pay-opt ${pay === 'HOTEL' || !online ? 'on' : ''}`}><input type="radio" name="pay" checked={pay === 'HOTEL' || !online} onChange={() => setPay('HOTEL')} />
+                      <span><b>Pay at the hotel</b><small>No card needed now</small></span></label>
+                  )}
+                  {online && payOptions.mode === 'REQUIRED' && <small className="muted">The hotel confirms online bookings with a deposit. You'll pay on the secure payment page next.</small>}
                 </fieldset>
                 {policies.length > 0 && (
                   <div className="policy full"><b>Cancellation policy</b>{policies.map((p) => <Lines key={p} text={p} />)}</div>
@@ -304,7 +333,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
       </div>
 
       <div className="cart-bar">
-        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · {giftApplied ? 'pay at hotel' : 'total'}</small><b>{money(dueAtHotel)}</b></div>
+        <div className="cart-total"><small>{items.length} room{items.length > 1 ? 's' : ''}{totals.addOnTotal ? ' + add-ons' : ''} · {payNow > 0 ? 'pay now' : giftApplied ? 'pay at hotel' : 'total'}</small><b>{money(payNow > 0 ? payNow : dueAtHotel)}</b></div>
         {step === 'addons' ? (
           <div className="row-actions">
             <button className="ghost" onClick={() => { setPicks({}); setStep('details'); }}>Skip</button>
@@ -312,7 +341,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
           </div>
         ) : (
           <button className="primary" type="submit" form="guest-form" disabled={busy || guests > capacity}>
-            {busy ? 'Confirming with the hotel…' : `Confirm booking · ${money(dueAtHotel)}`}
+            {busy ? 'Confirming with the hotel…' : payNow > 0 ? `Book & pay ${money(payNow)}` : `Confirm booking · ${money(dueAtHotel)}`}
           </button>
         )}
       </div>

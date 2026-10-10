@@ -32,6 +32,9 @@ public class OtaBookingOrder {
     @Column(name="voucher_applied", precision=12, scale=2) private BigDecimal voucherApplied;
     @Column(name="balance_due", precision=12, scale=2) private BigDecimal balanceDue;
     @Column(length=3) private String currency;
+    @Column(name="pay_url", length=500) private String payUrl;
+    @Column(name="pay_amount", precision=12, scale=2) private BigDecimal payAmount;
+    @Column(name="pay_kind", length=8) private String payKind;
     @Column(nullable=false, length=16) private String status;
     @Column(name="created_at", nullable=false) private Instant createdAt;
     @Column(name="updated_at", nullable=false) private Instant updatedAt;
@@ -55,6 +58,8 @@ public class OtaBookingOrder {
         this.addOnTotal=addOnTotal; this.discountTotal=discountTotal; this.estimatedTaxes=estimatedTaxes; this.grandTotal=grandTotal;
     }
     public void voucher(String reference, String voucherToken) { this.reference=reference; this.voucherToken=voucherToken; }
+    public void online(String payUrl, BigDecimal payAmount, String payKind) { this.payUrl=payUrl; this.payAmount=payAmount; this.payKind=payKind; }
+    public String getPayUrl(){return payUrl;} public BigDecimal getPayAmount(){return payAmount;} public String getPayKind(){return payKind;}
     public void payment(BigDecimal voucherApplied, BigDecimal balanceDue) { this.voucherApplied=voucherApplied; this.balanceDue=balanceDue; }
     public void fail() { this.status="FAILED"; this.updatedAt=Instant.now(); }
     public UUID getId(){return id;} public String getRequestId(){return requestId;}
