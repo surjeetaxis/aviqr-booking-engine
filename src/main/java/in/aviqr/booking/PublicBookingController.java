@@ -197,6 +197,30 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** Deals guests can still get; none from an older PMS. */
+    @GetMapping("/properties/{hotelId}/deals") public Object deals(@PathVariable UUID hotelId) {
+        requireAllowed(hotelId);
+        try {
+            return mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/deals?storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return List.of();
+            throw new OtaUpstreamException(e);
+        }
+    }
+    /** The deal that saves this stay the most; an empty object when none applies. */
+    @GetMapping("/properties/{hotelId}/deal") public Object bestDeal(@PathVariable UUID hotelId, @RequestParam(defaultValue="0") BigDecimal roomTotal,
+            @RequestParam LocalDate checkIn, @RequestParam LocalDate checkOut) {
+        requireAllowed(hotelId);
+        try {
+            JsonNode deal=mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/deal?roomTotal={total}&checkIn={in}&checkOut={out}&storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,roomTotal.max(BigDecimal.ZERO),checkIn,checkOut,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+            return deal.isObject()?deal:Map.of();
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of();
+            throw new OtaUpstreamException(e);
+        }
+    }
     @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
             @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
             @RequestParam(required=false) LocalDate checkIn, @RequestParam(required=false) LocalDate checkOut) {

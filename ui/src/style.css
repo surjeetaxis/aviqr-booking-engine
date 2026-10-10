@@ -425,6 +425,9 @@ nav b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 
 .policy { background: color-mix(in srgb, var(--accent) 14%, var(--paper)); border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 12px; }
 .policy p { margin: 4px 0 0; color: var(--muted); }
 .policy summary, .policy-block summary, .terms summary { cursor: pointer; }
+.deals { display: grid; gap: 8px; margin: 0 0 16px; }
+.deal { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1.5px dashed color-mix(in srgb, var(--accent) 70%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
+.deal small { color: var(--muted); }
 .policy-block { padding: 12px 0; border-top: 1px solid var(--line); }
 .policy-block p { margin: 4px 0 0; color: var(--muted); }
 .terms-text { max-height: 220px; overflow-y: auto; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }

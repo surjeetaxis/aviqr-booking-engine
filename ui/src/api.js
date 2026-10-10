@@ -56,6 +56,8 @@ export const api = {
   quote: (id, p) => request(`/properties/${id}/quote?${qs(p)}`),
   extras: (id) => request(`/properties/${id}/extras`).catch(() => ({ supported: false, addOns: [], taxes: [] })),
   policies: (id) => request(`/properties/${id}/policies`).catch(() => ({ termsRequired: false })),
+  deals: (id) => request(`/properties/${id}/deals`).catch(() => []),
+  bestDeal: (id, p) => request(`/properties/${id}/deal?${qs(p)}`).then((d) => (d && d.id ? d : null)).catch(() => null),
   promo: (id, p) => request(`/properties/${id}/promo?${qs(p)}`),
   giftVoucher: (id, code) => request(`/properties/${id}/gift-voucher?${qs({ code })}`),
   roomMap: (id, p) => request(`/properties/${id}/room-map?${qs(p)}`),

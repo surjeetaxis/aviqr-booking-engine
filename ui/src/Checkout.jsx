@@ -18,6 +18,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const [form, setForm] = useState({ guestName: '', guestEmail: '', code: '+91', phone: '', specialRequests: '' });
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState(null);
+  const [deal, setDeal] = useState(null);
   const [promoMsg, setPromoMsg] = useState('');
   const [giftInput, setGiftInput] = useState('');
   const [gift, setGift] = useState(null);
@@ -46,7 +47,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
 
   const supported = !!extras?.supported;
   const addOns = extras?.addOns || [];
-  const totals = checkoutTotals({ items, addOns, picks, taxes: extras?.taxes || [], promo, nights: n });
+  const totals = checkoutTotals({ items, addOns, picks, taxes: extras?.taxes || [], promo, deal, nights: n });
   // A gift voucher pays what it can now; the PMS confirms the exact amount when booking.
   const giftApplied = gift ? Math.min(Number(gift.balance) || 0, totals.grandTotal) : 0;
   const due = Math.max(0, totals.grandTotal - giftApplied);
@@ -63,6 +64,13 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
 
   // A changed room total changes a percentage promo, so re-check the code with the PMS.
   useEffect(() => { setPromo(null); setPromoMsg(''); }, [totals.roomTotal]);
+  // The best deal for this stay, re-checked when the room total changes.
+  useEffect(() => {
+    if (!totals.roomTotal) return;
+    let live = true;
+    api.bestDeal(hotelId, { roomTotal: totals.roomTotal, checkIn: stay.checkIn, checkOut: stay.checkOut }).then((d) => live && setDeal(d));
+    return () => { live = false; };
+  }, [hotelId, totals.roomTotal, stay.checkIn, stay.checkOut]);
 
   if (!done && items.length === 0) {
     return (
@@ -83,7 +91,8 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
     try {
       const p = await api.promo(hotelId, { code, roomTotal: totals.roomTotal, checkIn: stay.checkIn, checkOut: stay.checkOut });
       setPromo(p);
-      setPromoMsg(`${p.name} applied`);
+      const dealOff = deal ? Number(deal.discount) || 0 : 0;
+      setPromoMsg(dealOff > (Number(p.discount) || 0) ? `Your ${deal.name} deal already saves more, so it stays applied` : `${p.name} applied`);
     } catch {
       setPromo(null);
       setPromoMsg("That promo code isn't valid for this stay. Some codes need a longer stay or a higher total, or have been fully used.");
@@ -171,7 +180,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
           <dl className="co-totals">
             <dt>Room total</dt><dd>{money(totals.roomTotal)}</dd>
             {totals.addOnTotal > 0 && <><dt>Add-ons</dt><dd>{money(totals.addOnTotal)}</dd></>}
-            {totals.discount > 0 && <><dt>Promo {promo?.code}</dt><dd className="ok">− {money(totals.discount)}</dd></>}
+            {totals.discount > 0 && <><dt>{totals.discountSource === 'deal' ? `Deal: ${deal?.name}` : `Promo ${promo?.code}`}</dt><dd className="ok">− {money(totals.discount)}</dd></>}
             <dt>Taxes & fees{extras.taxes?.length ? ' (est.)' : ''}</dt><dd>{extras.taxes?.length ? money(totals.taxes) : 'At the hotel'}</dd>
             <dt className={giftApplied || payNow ? '' : 'grand'}>Grand total</dt><dd className={giftApplied || payNow ? '' : 'grand'}>{money(totals.grandTotal)}</dd>
             {giftApplied > 0 && <><dt>Gift voucher {gift.code}</dt><dd className="ok">− {money(giftApplied)}</dd></>}

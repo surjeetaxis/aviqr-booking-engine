@@ -12,6 +12,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
   const [roomTypes, setRoomTypes] = useState(null);
   const [extras, setExtras] = useState(null);
   const [policies, setPolicies] = useState(null);
+  const [deals, setDeals] = useState([]);
   const [error, setError] = useState('');
   const [roomsFailed, setRoomsFailed] = useState(0);
   const [tour, setTour] = useState(null);
@@ -27,6 +28,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
     api.roomTypes(id).then((r) => live && setRoomTypes(Array.isArray(r) ? r : [])).catch(() => live && setRoomTypes('error'));
     api.extras(id).then((x) => live && setExtras(x));
     api.policies(id).then((x) => live && setPolicies(x));
+    api.deals(id).then((x) => live && setDeals(Array.isArray(x) ? x : []));
     api.recordView(id);
     return () => { live = false; };
   }, [id, roomsFailed]);
@@ -105,6 +107,17 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
               </div>
             )}
           </div>
+          {deals.length > 0 && (
+            <div className="deals" aria-label="Deals at this hotel">
+              {deals.map((d) => (
+                <div key={d.id} className="deal">
+                  <b>{d.valueType === 'FIXED' ? `${money(d.value)} off` : `${Number(d.value)}% off`} · {d.name}</b>
+                  <small>{d.description || dealRule(d)}</small>
+                </div>
+              ))}
+              <small className="muted">Applied automatically at checkout when your stay qualifies.</small>
+            </div>
+          )}
           {asked > 1 && extras && !extras.supported && (
             <p className="note warn">This hotel takes one room per online booking for now. Book each room separately, or contact the hotel for group stays.</p>
           )}
@@ -164,6 +177,12 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
       {tour && <RoomTour room={tour.room} roomType={tour.roomType} property={property} onClose={() => setTour(null)} />}
     </div>
   );
+}
+
+/** A deal's conditions in words, when the hotel didn't write a description. */
+function dealRule(d) {
+  return [d.minDaysAhead != null && `Book ${d.minDaysAhead}+ days ahead`, d.maxDaysAhead != null && `Arrive within ${d.maxDaysAhead} days`,
+    d.minNights && `Stay ${d.minNights}+ nights`, d.stayTo && `Check in by ${d.stayTo}`].filter(Boolean).join(' · ') || 'On every stay';
 }
 
 /** Hotel-entered text, one paragraph per line. */
