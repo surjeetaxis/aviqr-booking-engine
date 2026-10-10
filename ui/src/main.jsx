@@ -15,6 +15,18 @@ import './style.css';
 
 const readRoute = () => window.location.hash.replace(/^#/, '') || (window.location.pathname.startsWith('/stay/') ? window.location.pathname : '/');
 
+/** A booking link with the stay filled in (#/stay/{id}?in=…&out=…&adults=…&children=…&rooms=…), as the booking assistant sends. */
+function stayFromLink(route) {
+  const m = route.match(/^(\/stay\/[^?]+)\?(.+)$/);
+  if (!m) return null;
+  const q = new URLSearchParams(m[2]);
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const checkIn = q.get('in'), checkOut = q.get('out');
+  if (!day.test(checkIn || '') || !day.test(checkOut || '') || checkIn < dateIn(0) || checkOut <= checkIn) return { path: m[1], stay: null };
+  const n = (k, lo, hi, d) => Math.min(hi, Math.max(lo, Number(q.get(k)) || d));
+  return { path: m[1], stay: { checkIn, checkOut, adults: n('adults', 1, 36, 2), children: n('children', 0, 24, 0), rooms: n('rooms', 1, 9, 1) } };
+}
+
 function useRoute() {
   const [route, setRoute] = useState(readRoute);
   useEffect(() => {
@@ -89,6 +101,15 @@ function App() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Apply a booking link's dates, then drop them from the address so a reload keeps the guest's own changes.
+  useEffect(() => {
+    const link = stayFromLink(route);
+    if (!link) return;
+    if (link.stay) setStay(link.stay);
+    window.history.replaceState(null, '', `#${link.path}`);
+    navigate(link.path);
+  }, [route]);
+
   useEffect(() => {
     if (route === '/') {
       document.title = `${config.brand || 'AviQR Stays'} · Book direct`;
@@ -114,7 +135,7 @@ function App() {
   }
 
   const openStay = (p) => navigate(`/stay/${p.id}`);
-  const routeStayKey = route.match(/^\/stay\/([^/]+)/i)?.[1];
+  const routeStayKey = route.match(/^\/stay\/([^/?]+)/i)?.[1];
   const stayId = routeStayKey && /^[0-9a-f-]{36}$/i.test(routeStayKey) ? routeStayKey
     : config.mode === 'TENANT' ? config.propertyId : null;
   const tenantStorefront = config.mode === 'TENANT';

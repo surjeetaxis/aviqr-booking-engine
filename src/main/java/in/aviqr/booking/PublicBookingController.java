@@ -277,6 +277,36 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** Whether the hotel's booking page shows the assistant chat and a WhatsApp button. */
+    @GetMapping("/properties/{hotelId}/assistant") public Object assistant(@PathVariable UUID hotelId) {
+        requireAllowed(hotelId);
+        try {
+            return mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/assistant?storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of("chatEnabled",false);
+            throw new OtaUpstreamException(e);
+        }
+    }
+    /** One chat turn with the booking assistant; the page keeps the conversation. */
+    @PostMapping(value="/properties/{hotelId}/chat", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Object> chat(@PathVariable UUID hotelId, @Valid @RequestBody ChatRequest r) {
+        requireAllowed(hotelId);
+        String path="/api/v1/pms/public/booking-engine/"+hotelId+"/chat";
+        Map<String,Object> body=new LinkedHashMap<>();
+        body.put("messages",r.messages()); body.put("storefrontHost",requestHost()); body.put("storefrontSlug",requestSlug());
+        try {
+            return ResponseEntity.ok(aviQr.post().uri(path).contentType(MediaType.APPLICATION_JSON).header("X-Forwarded-For",clientIp())
+                .body(encryption.seal("POST",path,body)).retrieve().body(Object.class));
+        } catch (RestClientResponseException e) {
+            int status=e.getStatusCode().value();
+            if (status==400||status==404||status==429) return ResponseEntity.status(status).body(Map.of("message",
+                readJson(e.getResponseBodyAsString()).path("message").asText("The assistant couldn't answer")));
+            throw new OtaUpstreamException(e);
+        }
+    }
+    public record ChatRequest(@NotNull @Size(min=1,max=40) List<@Valid ChatTurn> messages) { }
+    public record ChatTurn(@NotNull @Pattern(regexp="^(user|assistant)$") String role, @NotNull @Size(max=4000) String text) { }
     public record GroupEnquiryRequest(@NotBlank @Size(max=120) String organizerName, @NotBlank @Pattern(regexp="^[+0-9() .-]{7,24}$") String organizerPhone,
         @Email @Size(max=254) String organizerEmail, @Size(max=120) String company,
         @Pattern(regexp="^(WEDDING|CORPORATE|CONFERENCE|TOUR|SPORTS|OTHER)$") String eventType,

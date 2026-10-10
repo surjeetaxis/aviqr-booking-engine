@@ -263,6 +263,22 @@ nav b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 
 .field input:focus { border-color: var(--brand); outline: 0; }
 .confirmed { text-align: center; }
 .confirmed .summary { text-align: left; }
+.chat-dock { position: fixed; right: 16px; bottom: 96px; z-index: 40; display: grid; justify-items: end; gap: 10px; }
+.chat-buttons { display: flex; gap: 8px; }
+.chat-fab { border: 0; border-radius: 999px; padding: 12px 18px; font: inherit; font-weight: 700; background: var(--brand); color: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 18%); cursor: pointer; text-decoration: none; }
+.chat-fab.wa { background: #1f9d55; }
+.chat-panel { width: min(380px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 180px)); display: grid; grid-template-rows: auto 1fr auto auto; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 18px 50px rgb(0 0 0 / 22%); overflow: hidden; }
+.chat-panel header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.chat-panel header button { border: 0; background: none; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; }
+.chat-log { overflow-y: auto; padding: 12px 14px; display: grid; gap: 8px; align-content: start; }
+.chat-msg { margin: 0; padding: 9px 12px; border-radius: 14px; max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
+.chat-msg.user { justify-self: end; background: var(--brand); color: #fff; }
+.chat-msg.user a { color: #fff; }
+.chat-msg.assistant { justify-self: start; background: var(--tint, color-mix(in srgb, var(--ink) 6%, var(--paper))); }
+.chat-error { color: var(--warn, #b45309); font-size: 13px; margin: 0; }
+.chat-panel form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.chat-panel input { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; background: var(--paper); color: var(--ink); }
+.chat-note { padding: 0 12px 10px; color: var(--muted); font-size: 11.5px; }
 .currency-pick { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font: inherit; font-size: 13px; font-weight: 600; background: var(--paper); color: var(--ink); cursor: pointer; }
 .check.warn { background: var(--warn, #b45309); }
 .button-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }

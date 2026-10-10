@@ -58,6 +58,8 @@ export const api = {
   policies: (id) => request(`/properties/${id}/policies`).catch(() => ({ termsRequired: false })),
   deals: (id) => request(`/properties/${id}/deals`).catch(() => []),
   bestDeal: (id, p) => request(`/properties/${id}/deal?${qs(p)}`).then((d) => (d && d.id ? d : null)).catch(() => null),
+  assistant: (id) => request(`/properties/${id}/assistant`).catch(() => ({ chatEnabled: false })),
+  chat: (id, messages) => request(`/properties/${id}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }),
   groupEnquiry: (id, body) => request(`/properties/${id}/group-enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   loyalty: (id, roomTotal) => request(`/properties/${id}/loyalty?${qs({ roomTotal })}`).catch(() => ({ active: false })),
   loyaltyCode: (id, phone) => request(`/properties/${id}/loyalty/code`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) }),

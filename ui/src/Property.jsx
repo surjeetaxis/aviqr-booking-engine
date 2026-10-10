@@ -6,6 +6,7 @@ import RoomPicker from './RoomPicker.jsx';
 import RoomTour, { hasMedia, tourLabel, withTypeMedia } from './RoomTour.jsx';
 import { Stepper, StaySummary } from './Flow.jsx';
 import { guestsPerRoom } from './pricing.js';
+import ChatWidget from './ChatWidget.jsx';
 
 export default function Property({ id, stay, setStay, favorites, onFavorite, navigate, tenant = false, design, cartItems, onAdd, onRemove, onContinue }) {
   const [property, setProperty] = useState(null);
@@ -175,6 +176,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
         </div>
       )}
 
+      <ChatWidget hotelId={property.id} hotelName={property.name} />
       {tour && <RoomTour room={tour.room} roomType={tour.roomType} property={property} onClose={() => setTour(null)} />}
     </div>
   );
