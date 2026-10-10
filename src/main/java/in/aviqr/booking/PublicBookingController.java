@@ -175,6 +175,17 @@ public class PublicBookingController {
             throw new OtaUpstreamException(e);
         }
     }
+    /** Hotel policies and terms; an older PMS without them shows none. */
+    @GetMapping("/properties/{hotelId}/policies") public Object policies(@PathVariable UUID hotelId) {
+        requireAllowed(hotelId);
+        try {
+            return mapper.valueToTree(aviQr.get().uri("/api/v1/pms/public/booking-engine/{id}/policies?storefrontHost={host}&storefrontSlug={slug}",
+                hotelId,requestHost(),requestSlug()).retrieve().body(Object.class)).path("data");
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return Map.of("termsRequired",false);
+            throw new OtaUpstreamException(e);
+        }
+    }
     @GetMapping("/properties/{hotelId}/promo") public ResponseEntity<Object> promo(@PathVariable UUID hotelId,
             @RequestParam @Size(max=32) String code, @RequestParam(defaultValue="0") BigDecimal roomTotal,
             @RequestParam(required=false) LocalDate checkIn) {
@@ -258,10 +269,10 @@ public class PublicBookingController {
             Object body=advanced
                 ? new PmsCheckoutRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),lines,request.addOnLines(),blankToNull(request.promoCode()),
-                    blankToNull(request.giftVoucherCode()),requestId,requestHost(),requestSlug())
+                    blankToNull(request.giftVoucherCode()),request.termsAccepted(),requestId,requestHost(),requestSlug())
                 : new PmsBookingRequest(request.guestName().trim(),request.guestPhone().trim(),blankToNull(request.guestEmail()),blankToNull(request.specialRequests()),
                     request.checkInDate(),request.checkOutDate(),request.adults(),request.childCount(),first.roomTypeId(),first.ratePlanId(),first.roomId(),
-                    requestId,requestHost(),requestSlug());
+                    request.termsAccepted(),requestId,requestHost(),requestSlug());
             Object result=aviQr.post().uri("/api/v1/pms/public/booking-engine/{id}/book",hotelId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(encryption.seal("POST","/api/v1/pms/public/booking-engine/"+hotelId+"/book",body))
@@ -442,7 +453,7 @@ public class PublicBookingController {
         @NotNull @Min(1) @Max(36) Integer adults,@Min(0) @Max(24) Integer children,
         UUID roomTypeId,UUID ratePlanId,UUID roomId,
         @Size(max=9) List<@Valid RoomLine> rooms, @Size(max=10) List<@Valid AddOnLine> addOns,
-        @Size(max=32) String promoCode, @Size(max=40) String giftVoucherCode, UUID visitorId) {
+        @Size(max=32) String promoCode, @Size(max=40) String giftVoucherCode, Boolean termsAccepted, UUID visitorId) {
         /** The rooms list, or the older single-room fields. */
         List<RoomLine> lines() {
             if (rooms!=null&&!rooms.isEmpty()) return rooms;
@@ -454,9 +465,9 @@ public class PublicBookingController {
     public record RoomLine(@NotNull UUID roomTypeId,@NotNull UUID ratePlanId,@NotNull UUID roomId) { }
     public record AddOnLine(@NotNull UUID addOnId,@NotNull @Min(1) @Max(20) Integer quantity) { }
     private record PmsBookingRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
-        Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
+        Integer adults,Integer children,UUID roomTypeId,UUID ratePlanId,UUID roomId,Boolean termsAccepted,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     private record PmsCheckoutRequest(String guestName,String guestPhone,String guestEmail,String specialRequests,LocalDate checkInDate,LocalDate checkOutDate,
-        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
+        Integer adults,Integer children,List<RoomLine> rooms,List<AddOnLine> addOns,String promoCode,String giftVoucherCode,Boolean termsAccepted,UUID bookingRequestId,String storefrontHost,String storefrontSlug) { }
     @RestControllerAdvice static class Errors {
         @ExceptionHandler(OtaUpstreamException.class) ResponseEntity<Object> wrapped(OtaUpstreamException e) {
             return ResponseEntity.status(e.cause.getStatusCode()).body(Map.of("message","AviQR PMS is temporarily unavailable","upstreamStatus",e.cause.getStatusCode().value()));

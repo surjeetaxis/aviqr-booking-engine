@@ -11,6 +11,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
   const [property, setProperty] = useState(null);
   const [roomTypes, setRoomTypes] = useState(null);
   const [extras, setExtras] = useState(null);
+  const [policies, setPolicies] = useState(null);
   const [error, setError] = useState('');
   const [roomsFailed, setRoomsFailed] = useState(0);
   const [tour, setTour] = useState(null);
@@ -25,6 +26,7 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
     api.property(id).then((p) => live && setProperty(p)).catch(() => live && setError('This stay is not available right now.'));
     api.roomTypes(id).then((r) => live && setRoomTypes(Array.isArray(r) ? r : [])).catch(() => live && setRoomTypes('error'));
     api.extras(id).then((x) => live && setExtras(x));
+    api.policies(id).then((x) => live && setPolicies(x));
     api.recordView(id);
     return () => { live = false; };
   }, [id, roomsFailed]);
@@ -114,12 +116,21 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
             <div className="empty-card"><b>No rooms are open for online booking right now.</b><p>Please check again soon.</p></div>
           ) : (
             shown.map((rt) => (
-              <RoomTypeCard key={rt.roomTypeId} hotel={property} roomType={rt} stay={stay} perRoom={perRoom}
+              <RoomTypeCard key={rt.roomTypeId} hotel={property} roomType={rt} defaultPolicy={policies?.cancellationPolicy} stay={stay} perRoom={perRoom}
                 takenIds={cartItems.map((i) => i.room.roomId)} full={full && roomsWanted > 1} single={roomsWanted === 1}
                 onTour={(room) => setTour({ room, roomType: rt })} onAdd={add} />
             ))
           )}
         </section>
+
+        {(policies?.hotelPolicies || policies?.cancellationPolicy || policies?.termsAndConditions) && (
+          <section className="p-section" id="policies">
+            <h2>Policies</h2>
+            {policies.hotelPolicies && <div className="policy-block"><b>House rules</b><Lines text={policies.hotelPolicies} /></div>}
+            {policies.cancellationPolicy && <div className="policy-block"><b>Cancellation</b><Lines text={policies.cancellationPolicy} /><small className="muted">Some rates have their own policy, shown with the rate.</small></div>}
+            {policies.termsAndConditions && <details className="policy-block"><summary><b>Terms & conditions</b></summary><Lines text={policies.termsAndConditions} /></details>}
+          </section>
+        )}
 
         {hasPoint(property) && (
           <section className="p-section" id="location">
@@ -155,7 +166,12 @@ export default function Property({ id, stay, setStay, favorites, onFavorite, nav
   );
 }
 
-function RoomTypeCard({ hotel, roomType, stay, perRoom, takenIds, full, single, onTour, onAdd }) {
+/** Hotel-entered text, one paragraph per line. */
+export function Lines({ text }) {
+  return text.split(/\n+/).map((l) => l.trim()).filter(Boolean).map((l, i) => <p key={i}>{l}</p>);
+}
+
+function RoomTypeCard({ hotel, roomType, defaultPolicy, stay, perRoom, takenIds, full, single, onTour, onAdd }) {
   const [quotes, setQuotes] = useState({});
   const [rooms, setRooms] = useState(null);
   const [mapError, setMapError] = useState(false);
@@ -231,7 +247,7 @@ function RoomTypeCard({ hotel, roomType, stay, perRoom, takenIds, full, single, 
               <input type="radio" name={`plan-${roomType.roomTypeId}`} checked={planId === p.ratePlanId} onChange={() => setPlanId(p.ratePlanId)} />
               <div>
                 <b>{p.name}</b>
-                <small>{titleCase(p.mealPlan || 'Room only')} · {p.cancellationPolicy || 'Policy confirmed by the hotel'}</small>
+                <small>{titleCase(p.mealPlan || 'Room only')} · {p.cancellationPolicy || defaultPolicy || 'Policy confirmed by the hotel'}</small>
               </div>
               <div className="price">
                 {q && !q.error ? (

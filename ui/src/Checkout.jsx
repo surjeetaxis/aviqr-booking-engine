@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api, money, nights, prettyDate, titleCase } from './api.js';
 import { Stepper } from './Flow.jsx';
 import { checkoutTotals } from './pricing.js';
+import { Lines } from './Property.jsx';
 
 const CODES = ['+91', '+1', '+44', '+971', '+65', '+61', '+49', '+33'];
 
 export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked, navigate, tenant }) {
   const [hotel, setHotel] = useState(null);
   const [extras, setExtras] = useState(null);
+  const [terms, setTerms] = useState(null);
+  const [agreed, setAgreed] = useState(false);
   const [step, setStep] = useState(null);
   const [picks, setPicks] = useState({});
   const [form, setForm] = useState({ guestName: '', guestEmail: '', code: '+91', phone: '', specialRequests: '' });
@@ -28,6 +31,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   useEffect(() => {
     window.scrollTo(0, 0);
     api.property(hotelId).then(setHotel).catch(() => setHotel({ id: hotelId, name: 'Your stay' }));
+    api.policies(hotelId).then(setTerms);
     api.extras(hotelId).then((x) => {
       setExtras(x);
       setStep((s) => s || (x.addOns?.length ? 'addons' : 'details'));
@@ -42,7 +46,8 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
   const dueAtHotel = Math.max(0, totals.grandTotal - giftApplied);
   const guests = Number(stay.adults) + Number(stay.children || 0);
   const capacity = items.reduce((s, i) => s + Number(i.roomType.maxOccupancy || 2), 0);
-  const policies = [...new Set(items.map((i) => i.plan.cancellationPolicy).filter(Boolean))];
+  // A rate plan's own cancellation policy wins; otherwise the hotel's default applies.
+  const policies = [...new Set(items.map((i) => i.plan.cancellationPolicy || terms?.cancellationPolicy).filter(Boolean))];
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   // A changed room total changes a percentage promo, so re-check the code with the PMS.
@@ -108,6 +113,7 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
         addOns: addOns.filter((a) => picks[a.id] > 0).map((a) => ({ addOnId: a.id, quantity: picks[a.id] })),
         ...(promo ? { promoCode: promo.code } : {}),
         ...(gift ? { giftVoucherCode: gift.code } : {}),
+        ...(agreed ? { termsAccepted: true } : {}),
       }, key);
       setDone({ ...result, shown: totals, items, guestEmail: supported ? form.guestEmail.trim() : '' });
       setStep('done');
@@ -276,7 +282,17 @@ export default function Checkout({ hotelId, stay, items, onBackToRooms, onBooked
                   <label className="pay-opt off"><input type="radio" name="pay" disabled /> <span><b>Pay now</b><small>Online payment coming soon</small></span></label>
                 </fieldset>
                 {policies.length > 0 && (
-                  <div className="policy full"><b>Cancellation policy</b>{policies.map((p) => <p key={p}>{p}</p>)}</div>
+                  <div className="policy full"><b>Cancellation policy</b>{policies.map((p) => <Lines key={p} text={p} />)}</div>
+                )}
+                {terms?.hotelPolicies && (
+                  <details className="policy full"><summary><b>House rules</b></summary><Lines text={terms.hotelPolicies} /></details>
+                )}
+                {terms?.termsAndConditions && (
+                  <div className="field full terms">
+                    <details><summary>Read the terms & conditions</summary><div className="terms-text"><Lines text={terms.termsAndConditions} /></div></details>
+                    <label className="agree"><input type="checkbox" required={terms.termsRequired} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                      <span>I agree to {hotel?.name || "the hotel"}'s terms & conditions{policies.length ? ' and cancellation policy' : ''}{terms.termsRequired ? ' *' : ''}</span></label>
+                  </div>
                 )}
                 {guests > capacity && <p className="note warn full">These rooms sleep up to {capacity}. Go back and add a room for {guests} guests.</p>}
                 {error && <p className="note warn full">{error}</p>}

@@ -55,6 +55,7 @@ export const api = {
   roomTypes: (id) => request(`/properties/${id}/room-types`),
   quote: (id, p) => request(`/properties/${id}/quote?${qs(p)}`),
   extras: (id) => request(`/properties/${id}/extras`).catch(() => ({ supported: false, addOns: [], taxes: [] })),
+  policies: (id) => request(`/properties/${id}/policies`).catch(() => ({ termsRequired: false })),
   promo: (id, p) => request(`/properties/${id}/promo?${qs(p)}`),
   giftVoucher: (id, code) => request(`/properties/${id}/gift-voucher?${qs({ code })}`),
   roomMap: (id, p) => request(`/properties/${id}/room-map?${qs(p)}`),
