@@ -39,6 +39,14 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
+    # deploy.sh waits for this before it stops the old container.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 30s
   booking-ui:
     build: ./ui
     restart: unless-stopped
@@ -46,6 +54,12 @@ services:
     expose: ["80"]
     networks: [booking]
     security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
   caddy:
     image: caddy:2.9-alpine
     restart: unless-stopped

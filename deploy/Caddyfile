@@ -6,7 +6,10 @@
 
 {$DOMAIN} {
   encode zstd gzip
-  reverse_proxy booking-ui:80
+  reverse_proxy booking-ui:80 {
+    # Retry while deploy.sh swaps the UI container.
+    lb_try_duration 10s
+  }
 }
 
 https:// {
@@ -14,5 +17,8 @@ https:// {
     on_demand
   }
   encode zstd gzip
-  reverse_proxy booking-ui:80
+  reverse_proxy booking-ui:80 {
+    # Retry while deploy.sh swaps the UI container.
+    lb_try_duration 10s
+  }
 }

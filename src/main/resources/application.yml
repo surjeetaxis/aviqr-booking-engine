@@ -1,5 +1,7 @@
 server:
   port: ${PORT:8080}
+  # Finish in-flight requests when a deploy stops this container.
+  shutdown: graceful
   forward-headers-strategy: framework
 spring:
   datasource:
@@ -16,6 +18,8 @@ spring:
     enabled: true
   application:
     name: aviqr-booking-engine
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   jackson:
     default-property-inclusion: non_null
 management:
