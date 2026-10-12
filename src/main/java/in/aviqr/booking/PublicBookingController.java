@@ -70,9 +70,14 @@ public class PublicBookingController {
         });
         return resolved;
     }
-    @GetMapping("/domains/authorize") public ResponseEntity<Void> authorizeCustomDomain(@RequestParam String domain) {
-        get("/api/v1/hotels/public/booking-engine/domain-authorized?domain={domain}",domain);
-        return ResponseEntity.noContent().build();
+    @GetMapping("/domains/authorize") public ResponseEntity<Object> authorizeCustomDomain(@RequestParam String domain) {
+        try {
+            aviQr.get().uri("/api/v1/hotels/public/booking-engine/domain-authorized?domain={domain}",domain).retrieve().toBodilessEntity();
+            return ResponseEntity.noContent().build();
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value()==404) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","That domain isn't connected to an AviQR booking engine"));
+            throw new OtaUpstreamException(e);
+        }
     }
     @GetMapping("/properties") public Object properties(@RequestParam(defaultValue="") String q,
             @RequestParam(defaultValue="") String city, @RequestParam(defaultValue="0") int page,
